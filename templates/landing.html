@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>每个人的电影史</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%;background:#060F22;color:#C9A86A;font-family:"Songti SC","STSong","Noto Serif SC","Noto Serif CJK SC",serif}
+body{min-height:100vh;display:flex;overflow:hidden}
+.left{flex:1;position:relative;min-height:100vh;background:#060F22}
+.left::after{content:"";position:absolute;right:0;top:0;bottom:0;width:96px;background:linear-gradient(to right,rgba(6,15,34,0),#060F22);pointer-events:none;z-index:1}
+canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+.right{width:clamp(520px,42vw,620px);display:flex;flex-direction:column;justify-content:center;padding:48px clamp(56px,5vw,82px) 48px 0;margin-right:clamp(18px,4vw,72px);position:relative;z-index:2}
+.title-lockup{display:inline-block;margin:0 0 18px}
+h1{margin:0;color:#F2D88F;font-size:40px;font-weight:400;letter-spacing:8px;line-height:1.2}
+.en-title{display:block;width:max-content;margin-top:9px;color:rgba(201,168,106,.72);font-family:Georgia,"Times New Roman",serif;font-size:20px;line-height:1;letter-spacing:0;white-space:nowrap}
+.sub{margin:0 0 42px;font-size:15px;line-height:1.85;opacity:.68}
+.epi{margin:0 0 38px;font-size:14px;font-style:italic;line-height:1.75;letter-spacing:.5px;color:#F0E6CB;opacity:.42}
+form{margin:0}
+.field{width:100%;height:56px;padding:0 22px;margin-bottom:18px;background:rgba(6,15,34,.52);border:1px solid rgba(201,168,106,.35);border-radius:11px;color:#F0E6CB;font:16px inherit;outline:none;transition:border-color .25s,box-shadow .25s,background .25s}
+.field:focus{border-color:rgba(242,216,143,.75);box-shadow:0 0 0 3px rgba(242,216,143,.08);background:rgba(6,15,34,.72)}
+.field::placeholder{color:rgba(201,168,106,.48)}
+.fileline{display:none;margin:2px 0 16px}
+.fileline input{max-width:100%;color:#C9A86A;font:12px inherit}
+.btn{display:inline-flex;align-items:center;justify-content:center;height:50px;min-width:188px;margin-top:13px;padding:0 38px;background:transparent;border:1px solid rgba(201,168,106,.55);border-radius:999px;color:#F2D88F;font:16px inherit;letter-spacing:4px;cursor:pointer;transition:background .25s,border-color .25s,opacity .25s}
+.btn:hover{background:rgba(242,216,143,.08);border-color:rgba(242,216,143,.85)}
+.btn[disabled]{cursor:wait;opacity:.68}
+.toggle{display:inline-block;margin-top:25px;color:#C9A86A;font-size:13px;opacity:.58;text-decoration:none;cursor:pointer}
+.toggle:hover{opacity:.9}
+.foot{margin:36px 0 0;font-size:12px;letter-spacing:1px;opacity:.42}
+.mode-csv #dbid{display:none}
+.mode-csv .fileline{display:block}
+@media(max-width:860px){
+body{display:block;overflow:auto}
+.left{min-height:42vh;height:42vh}
+.left::after{display:none}
+.right{width:100%;min-height:58vh;padding:34px clamp(28px,8vw,72px) 42px;align-items:flex-start;text-align:left;justify-content:flex-start;margin-right:0}
+.title-lockup{margin-bottom:16px}
+h1{font-size:34px;letter-spacing:6px}
+.en-title{font-size:16px}
+.sub{margin-bottom:22px}
+.epi{display:none}
+form{width:min(560px,100%)}
+.field{max-width:560px;text-align:left}
+}
+@media(max-width:460px){
+.right{padding-left:20px;padding-right:20px}
+.field{text-align:left}
+.btn{width:100%}
+}
+</style>
+</head>
+<body>
+<div class="left"><canvas id="cv" aria-hidden="true"></canvas></div>
+<div class="right">
+<div class="title-lockup">
+<h1 id="brandTitle">每个人的电影史</h1>
+<div class="en-title" id="brandEnglish">EVERYONE · EVERY CINEMA</div>
+</div>
+<p class="sub">输入豆瓣 ID，生成你的电影史星空。</p>
+<form id="mainform" method="post" action="/api/jobs/douban">
+<input class="field" type="text" name="douban_id" id="dbid" autocomplete="off" inputmode="text" required placeholder="豆瓣用户 ID">
+<div class="fileline" id="csvwrap"><input type="file" name="file" accept=".csv"></div>
+<input class="field" type="text" name="title" maxlength="40" placeholder="给这片天空起个名（可不填）">
+<button type="submit" class="btn">点亮星空</button>
+</form>
+</div>
+<script>
+function fitEnglishTitle(){
+  var zh=document.getElementById("brandTitle"),en=document.getElementById("brandEnglish");
+  if(!zh||!en)return;
+  en.style.letterSpacing="0px";
+  en.style.fontSize=innerWidth<=860?"16px":"20px";
+  var target=zh.getBoundingClientRect().width;
+  var chars=Math.max(1,en.textContent.length);
+  var base=en.getBoundingClientRect().width;
+  if(base>target){
+    var size=parseFloat(getComputedStyle(en).fontSize);
+    en.style.fontSize=Math.max(12,size*target/base)+"px";
+    base=en.getBoundingClientRect().width;
+  }
+  var spacing=Math.max(0,(target-base)/chars);
+  en.style.letterSpacing=spacing+"px";
+}
+fitEnglishTitle();
+addEventListener("resize",fitEnglishTitle);
+var form=document.getElementById("mainform"),dbid=document.getElementById("dbid"),csv=document.querySelector("#csvwrap input"),csvMode=false;
+function toggleCsvMode(){
+  csvMode=!csvMode;
+  document.body.classList.toggle("mode-csv",csvMode);
+  form.action=csvMode?"/api/skies":"/api/jobs/douban";
+  form.enctype=csvMode?"multipart/form-data":"application/x-www-form-urlencoded";
+  dbid.required=!csvMode;csv.required=csvMode;
+}
+form.addEventListener("submit",function(){
+  var btn=form.querySelector("button[type=submit]");
+  btn.disabled=true;btn.textContent=csvMode?"正在导入":"正在点亮";
+});
+var cv=document.getElementById("cv"),ctx=cv.getContext("2d");
+var dpr=Math.min(devicePixelRatio||1,2),W=0,H=0;
+function resize(){var r=cv.getBoundingClientRect();W=r.width;H=r.height;cv.width=Math.max(1,W*dpr);cv.height=Math.max(1,H*dpr);ctx.setTransform(dpr,0,0,dpr,0,0)}
+resize();addEventListener("resize",resize);
+var films=[
+["公民凯恩",1941],["迷魂记",1958],["东京物语",1953],["花样年华",2000],
+["教父",1972],["筋疲力尽",1960],["七武士",1954],["2001太空漫游",1968],
+["四百击",1959],["低俗小说",1994],["霸王别姬",1993],["潜行者",1979],
+["雨中曲",1952],["千与千寻",2001],["穆赫兰道",2001],["寄生虫",2019],
+["偷自行车的人",1948],["游戏规则",1939],["八部半",1963],["出租车司机",1976],
+["现代启示录",1979],["持摄影机的人",1929],["日落大道",1950],["后窗",1954],
+["大路",1954],["恐惧吞噬灵魂",1974],["秋刀鱼之味",1962],["唐人街",1974],
+["重庆森林",1994],["杀人回忆",2003],["悲情城市",1989],["小城之春",1948],
+["罗生门",1950],["大都会",1927],["晚春",1949],["狂人皮埃罗",1965],
+["热情似火",1959],["一一",2000],["好家伙",1990],["牯岭街少年杀人事件",1991]
+];
+function hash(t){var h=2166136261;for(var i=0;i<t.length;i++){h^=t.charCodeAt(i);h=Math.imul(h,16777619)}return(h>>>0)/4294967296}
+var Y0=1895,Y1=2026,RIN=18,cx,cy,RW;
+var stars=films.map(function(f,i){
+  var a=hash(f[0])*.9+.05,rf=.12+.76*hash("\u0001"+f[0]);
+  var yr=Math.min(f[1]+rf,Y1-.05),r=(yr-Y0)/(Y1-Y0),ang=(a*360-90)*Math.PI/180;
+  return{t:f[0],y:f[1],a:ang,r:r,ph:hash(f[0]+f[0])*6.28,sp:.4+hash(f[0]+"s")*.8,m:i<4?4:(i<10?3:(i<20?2:1))}
+});
+var conns=[[0,11],[1,13],[3,28],[4,19],[12,7],[2,17]];
+function star4(x,y,R){ctx.beginPath();var w=R*.27;ctx.moveTo(x,y-R);ctx.lineTo(x+w,y-w);ctx.lineTo(x+R,y);ctx.lineTo(x+w,y+w);ctx.lineTo(x,y+R);ctx.lineTo(x-w,y+w);ctx.lineTo(x-R,y);ctx.lineTo(x-w,y-w);ctx.closePath()}
+function draw(now){
+  ctx.clearRect(0,0,W,H);cx=W*.48;cy=H*.5;RW=Math.min(W,H)*.42;var sc=RW-RIN;
+  var haze=ctx.createRadialGradient(cx,cy,0,cx,cy,RW*1.25);haze.addColorStop(0,"rgba(242,216,143,.05)");haze.addColorStop(.62,"rgba(6,15,34,0)");haze.addColorStop(1,"rgba(6,15,34,.38)");ctx.fillStyle=haze;ctx.fillRect(0,0,W,H);
+  ctx.lineWidth=.8;for(var yr=1905;yr<2026;yr+=10){var rr=RIN+sc*(yr-Y0)/(Y1-Y0);ctx.strokeStyle="rgba(201,168,106,.055)";ctx.beginPath();ctx.arc(cx,cy,rr,0,6.2832);ctx.stroke()}
+  ctx.strokeStyle="rgba(201,168,106,.16)";ctx.lineWidth=1;ctx.beginPath();ctx.arc(cx,cy,RIN+sc,0,6.2832);ctx.stroke();
+  ctx.save();
+  ctx.font='24px "Songti SC","Noto Serif SC",serif';
+  ctx.fillStyle="rgba(242,216,143,.24)";
+  ctx.textAlign="center";
+  ctx.textBaseline="middle";
+  ctx.shadowColor="rgba(242,216,143,.42)";
+  ctx.shadowBlur=14;
+  ctx.filter="blur(1.2px)";
+  ctx.fillText("1895",cx,cy);
+  ctx.restore();
+  var grd=ctx.createRadialGradient(cx,cy,0,cx,cy,5);grd.addColorStop(0,"rgba(242,216,143,.95)");grd.addColorStop(1,"rgba(242,216,143,0)");ctx.fillStyle=grd;ctx.beginPath();ctx.arc(cx,cy,5,0,6.2832);ctx.fill();
+  var pos=stars.map(function(s){var rr=RIN+s.r*sc;return[cx+rr*Math.cos(s.a),cy+rr*Math.sin(s.a)]});
+  conns.forEach(function(c){var p=pos[c[0]],q=pos[c[1]];ctx.strokeStyle="rgba(242,216,143,.13)";ctx.lineWidth=.8;ctx.beginPath();ctx.moveTo(p[0],p[1]);ctx.lineTo(q[0],q[1]);ctx.stroke()});
+  stars.forEach(function(s,i){var x=pos[i][0],y=pos[i][1],tw=.75+.25*Math.sin(now/1000*s.sp+s.ph),sz=s.m>=4?4.5:(s.m===3?3.5:(s.m===2?2.8:2));if(s.m>=3){ctx.fillStyle="rgba(242,216,143,"+(tw*.1).toFixed(2)+")";ctx.beginPath();ctx.arc(x,y,sz+6,0,6.2832);ctx.fill()}ctx.fillStyle="rgba(242,216,143,"+(tw*.9).toFixed(2)+")";star4(x,y,sz);ctx.fill()});
+  var boxes=[];function tryP(bx){for(var j=0;j<boxes.length;j++){var o=boxes[j];if(bx.x<o.x+o.w+4&&bx.x+bx.w+4>o.x&&bx.y<o.y+o.h+2&&bx.y+bx.h+2>o.y)return false}boxes.push(bx);return true}
+  stars.forEach(function(s,i){var x=pos[i][0],y=pos[i][1];boxes.push({x:x-5,y:y-5,w:10,h:10})});
+  ctx.font='12px "Songti SC","Noto Serif SC",serif';
+  stars.map(function(s,i){return i}).sort(function(a,b){return stars[b].m-stars[a].m}).forEach(function(i){var s=stars[i],x=pos[i][0],y=pos[i][1],phase=(now/5000+i*.13)%1;var la=phase<.3?phase/.3:(phase<.6?1:(1-(phase-.6)/.4));la=la*la*(s.m>=3?.72:.48);if(la<.05)return;var txt=s.t,tw2=ctx.measureText(txt).width,right=x>cx,bx={x:x+(right?8:-8-tw2),y:y-7,w:tw2,h:13};if(!tryP(bx)){bx.y=y-20;bx.x=x-tw2/2;if(!tryP(bx)){bx.y=y+8;if(!tryP(bx))return}}ctx.fillStyle="rgba(240,230,203,"+la.toFixed(2)+")";ctx.textAlign="left";ctx.fillText(txt,bx.x,bx.y+11)});
+  requestAnimationFrame(draw)
+}
+requestAnimationFrame(draw);
+</script>
+</body>
+</html>

@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>电影史正在显影</title>
+<style>
+:root{--ink:#080908;--paper:#EFE7D2;--gold:#E9C978;--dim:#A98F58;--red:#B96654;--blue:#9EAFC2;--line:rgba(233,201,120,.28);--serif:"Songti SC","STSong","Noto Serif SC","SimSun",Georgia,serif}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--ink);color:var(--dim);font-family:var(--serif);overflow:hidden}
+#plate{position:fixed;inset:0;width:100%;height:100%;display:block}
+.grain{position:fixed;inset:0;pointer-events:none;opacity:.11;background-image:linear-gradient(0deg,transparent 0,rgba(255,255,255,.18) 1px,transparent 2px);background-size:100% 4px;mix-blend-mode:screen}
+.shell{position:relative;z-index:2;min-height:100%;display:grid;grid-template-rows:auto 1fr auto;padding:22px 24px max(20px,env(safe-area-inset-bottom))}
+header{display:flex;align-items:flex-start;justify-content:space-between;gap:18px}
+h1{margin:0;color:var(--gold);font-size:18px;font-weight:400;letter-spacing:4px}
+#phase{margin:6px 0 0;font-size:12px;letter-spacing:1px;color:var(--blue)}
+.mark{width:52px;height:52px;border:1px solid var(--line);border-radius:50%;display:grid;place-items:center;color:var(--gold);font-size:12px;letter-spacing:1px}
+.readout{align-self:end;display:grid;grid-template-columns:1fr auto;gap:18px;align-items:end}
+.stats{display:flex;flex-wrap:wrap;gap:14px 22px;align-items:baseline;padding-bottom:2px}
+.stat{min-width:88px}
+.stat b{display:block;color:var(--paper);font-size:26px;font-weight:400;font-variant-numeric:tabular-nums;line-height:1}
+.stat span{display:block;margin-top:6px;font-size:11px;letter-spacing:1px;color:var(--dim)}
+.bar{height:2px;width:min(46vw,520px);background:rgba(233,201,120,.16);position:relative;overflow:hidden}
+#barfill{position:absolute;inset:0 auto 0 0;width:0;background:var(--gold)}
+.actions{display:none;gap:10px;justify-content:flex-end;align-items:center}
+.actions.show{display:flex}
+.btn{height:38px;padding:0 18px;border:1px solid rgba(233,201,120,.55);border-radius:999px;background:rgba(8,9,8,.46);color:var(--gold);font:13px var(--serif);letter-spacing:1px;text-decoration:none;cursor:pointer}
+.btn.secondary{border-color:rgba(158,175,194,.45);color:var(--blue)}
+.btn:hover{background:rgba(233,201,120,.08)}
+.error{color:var(--red)}
+@media(max-width:700px){
+.shell{padding:18px 16px max(16px,env(safe-area-inset-bottom))}
+header{display:block}.mark{display:none}
+.readout{grid-template-columns:1fr;gap:14px}
+.bar{width:100%}
+.stat b{font-size:22px}
+.actions{justify-content:flex-start;flex-wrap:wrap}
+}
+</style>
+</head>
+<body>
+<canvas id="plate" aria-hidden="true"></canvas>
+<div class="grain"></div>
+<main class="shell">
+<header>
+<div><h1>每个人的电影史</h1><p id="phase">观测台正在开机</p></div>
+<div class="mark">1895</div>
+</header>
+<section class="readout" aria-live="polite">
+<div>
+<div class="stats">
+<div class="stat"><b id="fetched">0</b><span>已读取</span></div>
+<div class="stat"><b id="total">--</b><span>豆瓣记录</span></div>
+<div class="stat"><b id="usable">0</b><span>可入星图</span></div>
+</div>
+<div class="bar"><i id="barfill"></i></div>
+</div>
+<div id="actions" class="actions">
+<a id="enter" class="btn" href="#">进入星空</a>
+<button id="resume" class="btn secondary" type="button">继续补齐</button>
+</div>
+</section>
+</main>
+<script>
+(function(){
+var JOB="__JOB_ID__";
+var cv=document.getElementById("plate"),ctx=cv.getContext("2d");
+var fetched=document.getElementById("fetched"),total=document.getElementById("total"),usable=document.getElementById("usable");
+var phase=document.getElementById("phase"),barfill=document.getElementById("barfill"),actions=document.getElementById("actions"),enter=document.getElementById("enter"),resume=document.getElementById("resume");
+var W=0,H=0,D=1,state={status:"queued",total:0,fetched:0,usable:0,message:"观测台正在开机",redirect_url:null};
+var redirected=false,lastPoll=0;
+function resize(){D=Math.min(window.devicePixelRatio||1,2);W=innerWidth;H=innerHeight;cv.width=W*D;cv.height=H*D;ctx.setTransform(D,0,0,D,0,0)}
+window.addEventListener("resize",resize);resize();
+function h(seed){var x=Math.sin(seed*127.1)*43758.5453;return x-Math.floor(x)}
+function progress(){return state.total?Math.max(0,Math.min(1,state.fetched/state.total)):0}
+function draw(now){
+ ctx.fillStyle="#080908";ctx.fillRect(0,0,W,H);
+ var cx=W/2,cy=H*.47,R=Math.min(W,H)*.28;
+ ctx.save();ctx.translate(cx,cy);
+ ctx.strokeStyle="rgba(233,201,120,.12)";ctx.lineWidth=1;
+ for(var r=1;r<=5;r++){ctx.beginPath();ctx.arc(0,0,R*r/5,0,Math.PI*2);ctx.stroke()}
+ for(var a=0;a<24;a++){var g=(a/24)*Math.PI*2+now*.00003;ctx.beginPath();ctx.moveTo(Math.cos(g)*R*.18,Math.sin(g)*R*.18);ctx.lineTo(Math.cos(g)*R*1.07,Math.sin(g)*R*1.07);ctx.strokeStyle=a%6===0?"rgba(158,175,194,.18)":"rgba(233,201,120,.08)";ctx.stroke()}
+ var p=progress(),spin=now*.00008;
+ ctx.lineWidth=2;ctx.strokeStyle="rgba(233,201,120,.78)";ctx.beginPath();ctx.arc(0,0,R*1.02,-Math.PI/2,-Math.PI/2+p*Math.PI*2);ctx.stroke();
+ var count=Math.min(190,Math.max(18,state.usable||Math.floor(p*80)));
+ for(var i=0;i<count;i++){
+   var born=i/count;
+   if(born>Math.max(.04,p+.04) && state.status!=="complete" && state.status!=="partial")continue;
+   var rr=R*(.12+.88*h(i+3)),ang=h(i+9)*Math.PI*2+spin*(.35+h(i));
+   var x=Math.cos(ang)*rr,y=Math.sin(ang)*rr,al=.18+.7*Math.max(0,1-Math.abs(born-p)*3);
+   ctx.fillStyle=i%11===0?"rgba(158,175,194,"+al+")":"rgba(233,201,120,"+al+")";
+   var s=i%17===0?2.1:1.15;ctx.beginPath();ctx.arc(x,y,s,0,Math.PI*2);ctx.fill();
+ }
+ ctx.fillStyle="rgba(239,231,210,.82)";ctx.beginPath();ctx.arc(0,0,2.2,0,Math.PI*2);ctx.fill();
+ ctx.restore();
+ ctx.strokeStyle="rgba(233,201,120,.1)";
+ for(var y=H*.72;y<H;y+=18){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke()}
+ requestAnimationFrame(draw);
+}
+requestAnimationFrame(draw);
+function render(d){
+ state=d;var t=d.total||0,p=t?Math.round(d.fetched/t*100):0;
+ fetched.textContent=d.fetched||0;total.textContent=t||"--";usable.textContent=d.usable||0;barfill.style.width=p+"%";
+ phase.textContent=d.message||d.status;
+ phase.className=d.status==="failed"?"error":"";
+ if(d.status==="partial"&&d.redirect_url){actions.classList.add("show");enter.href=d.redirect_url;resume.style.display="inline-block"}
+ else if(d.status==="complete"&&d.redirect_url){actions.classList.add("show");enter.href=d.redirect_url;resume.style.display="none";if(!redirected){redirected=true;setTimeout(function(){location.href=d.redirect_url},1200)}}
+ else if(d.status==="failed"){actions.classList.remove("show")}
+ else{actions.classList.remove("show")}
+}
+async function poll(){
+ try{var r=await fetch("/api/jobs/"+JOB+".json",{cache:"no-store"});if(r.ok)render(await r.json())}catch(e){}
+ var terminal=state.status==="complete"||state.status==="failed"||state.status==="partial";
+ if(!terminal)setTimeout(poll,1500);
+}
+resume.addEventListener("click",async function(){
+ resume.disabled=true;resume.textContent="继续中";
+ try{await fetch("/api/jobs/"+JOB+"/resume",{method:"POST"});actions.classList.remove("show");setTimeout(poll,600)}finally{setTimeout(function(){resume.disabled=false;resume.textContent="继续补齐"},1800)}
+});
+poll();
+})();
+</script>
+</body>
+</html>
