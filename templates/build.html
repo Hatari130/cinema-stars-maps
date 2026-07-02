@@ -33,9 +33,22 @@ h1{margin:0;color:var(--gold);font-size:18px;font-weight:400;letter-spacing:4px}
 .import-title{margin:0;color:var(--paper);font-size:17px;font-weight:400;letter-spacing:2px}
 .import-copy{margin:8px 0 14px;max-width:660px;color:var(--dim);font-size:13px;line-height:1.8}
 .import-actions{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px}
+.bookmark-guide{display:grid;grid-template-columns:minmax(220px,320px) 1fr;gap:16px;align-items:stretch;max-width:820px;margin:12px 0 14px}
+.bookmark-card{display:flex;flex-direction:column;gap:10px;padding:16px;border:1px solid rgba(233,201,120,.4);border-radius:14px;background:rgba(233,201,120,.06)}
+.bookmarklet{height:48px;display:inline-flex;align-items:center;justify-content:center;border:1px solid rgba(233,201,120,.74);border-radius:999px;background:rgba(233,201,120,.12);color:var(--gold);font:15px/1 var(--serif);letter-spacing:1.4px;text-decoration:none;cursor:grab;user-select:none}
+.bookmarklet:active{cursor:grabbing}
+.bookmark-note{margin:0;color:var(--blue);font-size:12px;line-height:1.7}
+.bookmark-feedback{display:none;margin:0;color:var(--gold);font-size:12px;line-height:1.6}
+.bookmark-feedback.show{display:block}
+.bookmark-steps{margin:0;padding:0;list-style:none;display:grid;gap:8px}
+.bookmark-steps li{position:relative;padding:10px 12px 10px 46px;border:1px solid rgba(158,175,194,.22);border-radius:12px;background:rgba(8,9,8,.24);color:var(--paper);font-size:13px;line-height:1.55}
+.bookmark-steps b{position:absolute;left:12px;top:10px;color:var(--gold);font-weight:400;font-variant-numeric:tabular-nums}
 .console-hint{margin:0 0 14px;max-width:760px;padding:11px 13px;border:1px solid rgba(158,175,194,.28);border-radius:10px;background:rgba(158,175,194,.06);color:var(--paper);font-size:13px;line-height:1.8}
 .console-hint b{color:var(--gold);font-weight:400}
 .console-hint code{display:inline-block;margin:0 2px;padding:1px 6px;border:1px solid rgba(233,201,120,.24);border-radius:999px;color:var(--gold);font-family:Consolas,monospace;font-size:12px}
+.advanced-import{max-width:820px;margin-top:10px;color:var(--blue);font-size:12px}
+.advanced-import summary{cursor:pointer;color:var(--blue)}
+.advanced-import[open]{padding-bottom:4px}
 .steps{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:0;padding:0;list-style:none}
 .steps li{border-top:1px solid rgba(158,175,194,.28);padding-top:8px;color:var(--blue);font-size:12px;line-height:1.6}
 .steps b{display:block;color:var(--gold);font-weight:400;font-variant-numeric:tabular-nums}
@@ -46,6 +59,8 @@ header{display:block}.mark{display:none}
 .bar{width:100%}
 .stat b{font-size:22px}
 .actions{justify-content:flex-start;flex-wrap:wrap}
+.bookmark-guide{grid-template-columns:1fr}
+.bookmarklet{cursor:pointer}
 .steps{grid-template-columns:1fr 1fr}
 }
 </style>
@@ -59,12 +74,27 @@ header{display:block}.mark{display:none}
 <div class="mark">1895</div>
 </header>
 <section id="browserImport" class="import-panel" aria-live="polite">
-<h2 class="import-title">换用浏览器导入</h2>
-<p class="import-copy">豆瓣暂时拒绝了服务器读取。请用你自己的浏览器打开豆瓣看过页面，再把导入码粘到开发者工具的 Console/控制台里运行；它只读取当前页面能看到的观影记录，不读取账号密码。</p>
+<h2 class="import-title">换用书签导入</h2>
+<p class="import-copy">豆瓣暂时拒绝了服务器读取。请在电脑浏览器里使用书签导入：它会在你的豆瓣看过页面读取公开可见的观影记录，不读取账号密码。</p>
+<div class="bookmark-guide">
+<div class="bookmark-card">
+<a id="bookmarklet" class="bookmarklet" href="__BOOKMARKLET_HREF__" draggable="true">电影史导入器</a>
+<p class="bookmark-note">把上面的金色按钮拖到浏览器书签栏。若看不到书签栏，先按 Ctrl+Shift+B 显示。</p>
+<p id="bookmarkFeedback" class="bookmark-feedback" role="status">请把按钮拖到书签栏；导入时是在豆瓣页面点击书签栏里的它。</p>
+</div>
+<ol class="bookmark-steps">
+<li><b>01</b>把「电影史导入器」拖到浏览器书签栏</li>
+<li><b>02</b>打开你的豆瓣看过页面</li>
+<li><b>03</b>点击书签栏里的「电影史导入器」</li>
+<li><b>04</b>保持豆瓣页面打开，等待自动回到电影史页面</li>
+</ol>
+</div>
 <div class="import-actions">
 <a id="importOpen" class="btn" target="_blank" rel="noreferrer">打开豆瓣看过页面</a>
-<button id="copyImport" class="btn secondary" type="button">复制导入码</button>
+<button id="copyImport" class="btn secondary" type="button">备用：复制导入码</button>
 </div>
+<details class="advanced-import">
+<summary>高级备用：控制台导入</summary>
 <p class="console-hint"><b>粘贴位置：</b>在豆瓣页面按 <code>F12</code>，点上方的 <code>Console</code> 或 <code>控制台</code> 标签，把导入码粘到最下面带 <code>&gt;</code> 的输入行里，然后按回车。若 Chrome 提示不能粘贴，先在控制台输入 <code>allow pasting</code> 并回车，再粘贴导入码。</p>
 <ol class="steps">
 <li><b>01</b>打开豆瓣看过页面</li>
@@ -72,6 +102,7 @@ header{display:block}.mark{display:none}
 <li><b>03</b>若提示禁止粘贴，先手打 allow pasting 并回车</li>
 <li><b>04</b>再粘贴导入码到 &gt; 输入行，回车后保持页面打开</li>
 </ol>
+</details>
 </section>
 <section class="readout" aria-live="polite">
 <div>
@@ -95,7 +126,7 @@ var JOB="__JOB_ID__";
 var cv=document.getElementById("plate"),ctx=cv.getContext("2d");
 var fetched=document.getElementById("fetched"),total=document.getElementById("total"),usable=document.getElementById("usable");
 var phase=document.getElementById("phase"),barfill=document.getElementById("barfill"),actions=document.getElementById("actions"),enter=document.getElementById("enter"),resume=document.getElementById("resume"),finalize=document.getElementById("finalize");
-var browserImport=document.getElementById("browserImport"),importOpen=document.getElementById("importOpen"),copyImport=document.getElementById("copyImport");
+var browserImport=document.getElementById("browserImport"),importOpen=document.getElementById("importOpen"),copyImport=document.getElementById("copyImport"),bookmarklet=document.getElementById("bookmarklet"),bookmarkFeedback=document.getElementById("bookmarkFeedback");
 var W=0,H=0,D=1,state={status:"queued",total:0,fetched:0,usable:0,message:"观测台正在开机",redirect_url:null};
 var redirected=false,lastPoll=0;
 function resize(){D=Math.min(window.devicePixelRatio||1,2);W=innerWidth;H=innerHeight;cv.width=W*D;cv.height=H*D;ctx.setTransform(D,0,0,D,0,0)}
@@ -153,6 +184,11 @@ finalize.addEventListener("click",async function(){
   finalize.disabled=true;finalize.textContent="生成中";
   try{var r=await fetch("/api/jobs/"+JOB+"/finalize",{method:"POST"});if(r.ok){actions.classList.remove("show");setTimeout(poll,600)}}finally{setTimeout(function(){finalize.disabled=false;finalize.textContent="直接生成"},1800)}
 });
+bookmarklet.addEventListener("click",function(e){
+  e.preventDefault();
+  bookmarkFeedback.classList.add("show");
+  setTimeout(function(){bookmarkFeedback.classList.remove("show")},3600);
+});
 copyImport.addEventListener("click",async function(){
   copyImport.disabled=true;copyImport.textContent="复制中";
   try{
@@ -165,7 +201,7 @@ copyImport.addEventListener("click",async function(){
   }catch(e){
     copyImport.textContent="复制失败";
   }finally{
-    setTimeout(function(){copyImport.disabled=false;copyImport.textContent="复制导入码"},2600);
+    setTimeout(function(){copyImport.disabled=false;copyImport.textContent="备用：复制导入码"},2600);
   }
 });
 poll();

@@ -454,7 +454,7 @@ def _browser_import_script(api_base, job_id, user_id):
     return r.json();
   }
   if (location.hostname !== "movie.douban.com" || !/\/people\/[^/]+\/collect/.test(location.pathname)) {
-    alert("请先打开你的豆瓣「看过」页面，再粘贴导入码。");
+    alert("请先打开你的豆瓣「看过」页面，再点击书签栏里的「电影史导入器」。");
     return;
   }
   const current = (location.pathname.match(/\/people\/([^/]+)\/collect/) || [])[1];
@@ -500,6 +500,10 @@ def _browser_import_script(api_base, job_id, user_id):
 """.strip().replace("__API_BASE__", json.dumps(api_base)[1:-1]) \
     .replace("__JOB_ID__", json.dumps(job_id)[1:-1]) \
     .replace("__USER_ID__", json.dumps(user_id)[1:-1])
+
+def _browser_import_bookmarklet(api_base, job_id, user_id):
+    code = _browser_import_script(api_base, job_id, user_id)
+    return "javascript:" + urllib.parse.quote(code, safe="()'!*,:;=+./?")
 
 def _subject_id(url):
     match = re.search(r"/subject/(\d+)", url or "")
@@ -782,10 +786,14 @@ async def create_douban_job(
     return RedirectResponse(url=f"/build/{job_id}", status_code=303)
 
 @app.get("/build/{job_id}", response_class=HTMLResponse)
-def build_page(job_id: str):
-    if not _job(job_id):
+def build_page(job_id: str, request: Request):
+    row = _job(job_id)
+    if not row:
         raise HTTPException(404, "任务不存在")
-    return BUILD_TPL.replace("__JOB_ID__", job_id)
+    api_base = str(request.base_url).rstrip("/")
+    html = BUILD_TPL.replace("__JOB_ID__", job_id) \
+                    .replace("__BOOKMARKLET_HREF__", html_lib.escape(_browser_import_bookmarklet(api_base, job_id, row["douban_id"]), quote=True))
+    return HTMLResponse(html, headers={"Cache-Control": "no-store"})
 
 @app.get("/api/jobs/{job_id}.json")
 def job_json(job_id: str):
@@ -798,7 +806,7 @@ def browser_import_code(job_id: str, request: Request):
         raise HTTPException(404, "任务不存在")
     api_base = str(request.base_url).rstrip("/")
     code = _browser_import_script(api_base, job_id, row["douban_id"])
-    return Response(code, media_type="text/plain; charset=utf-8")
+    return Response(code, media_type="application/javascript; charset=utf-8")
 
 @app.post("/api/jobs/{job_id}/browser-import-page")
 def browser_import_page(job_id: str, payload: dict = Body(...)):
