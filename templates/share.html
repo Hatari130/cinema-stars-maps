@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>__TITLE__ · 分享星图</title>
+<style>
+:root{--night:#030917;--navy:#07142b;--gold:#f2d88f;--dim:#c9a86a;--ivory:#f0e6cb;--serif:"Songti SC","STSong","Noto Serif SC","SimSun",Georgia,serif}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%;background:var(--night);color:var(--dim);font-family:var(--serif)}
+body{display:grid;place-items:center;padding:28px;background:
+radial-gradient(circle at 50% 24%,rgba(39,63,96,.34),transparent 46%),
+linear-gradient(180deg,#020713,#061026)}
+.poster{position:relative;height:min(780px,calc(100svh - 40px));min-height:640px;max-width:100%;aspect-ratio:9/16;overflow:hidden;border:1px solid rgba(201,168,106,.34);background:#060f22;
+box-shadow:0 36px 100px rgba(0,0,0,.54)}
+.poster:before{content:"";position:absolute;inset:0;pointer-events:none;opacity:.2;background-image:
+radial-gradient(circle,rgba(240,230,203,.42) 0 1px,transparent 1.4px),
+radial-gradient(circle,rgba(201,168,106,.26) 0 1px,transparent 1.3px);
+background-size:89px 89px,137px 137px;background-position:17px 11px,53px 79px}
+.inner{position:relative;z-index:1;height:100%;display:flex;flex-direction:column;padding:38px 30px 30px}
+.eyebrow{margin:0;color:rgba(240,230,203,.5);font-size:10px;letter-spacing:3.4px;text-transform:uppercase}
+.title{margin:13px 0 0;max-width:100%;color:var(--gold);line-height:1.18}
+.title-main{font-size:38px;font-weight:400;letter-spacing:5px;overflow-wrap:anywhere}
+.title-action{display:inline-block;margin-left:9px;color:rgba(201,168,106,.78);font-size:21px;letter-spacing:3px;vertical-align:baseline}
+h1.title-main{margin:13px 0 0;max-width:100%;color:var(--gold);font-size:34px;font-weight:400;line-height:1.25;letter-spacing:5px;overflow-wrap:anywhere}
+.subtitle{margin:10px 0 0;color:rgba(201,168,106,.74);font-size:12px;letter-spacing:1.2px}
+.sky{width:100%;display:block;margin:22px 0 10px;min-height:0;flex:1;object-fit:contain;filter:drop-shadow(0 0 18px rgba(242,216,143,.06))}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:13px;margin-top:auto}
+.stat{min-width:0;padding-top:11px;border-top:1px solid rgba(201,168,106,.28)}
+.stat b{display:inline;color:var(--gold);font-size:22px;font-weight:400;line-height:1;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.stat span{display:inline-block;margin-left:5px;color:rgba(240,230,203,.5);font-size:9.5px;line-height:1.2;letter-spacing:.7px;vertical-align:baseline}
+.stat small{display:block;margin-top:6px;color:rgba(240,230,203,.34);font-size:8.5px;line-height:1.35;letter-spacing:.45px}
+.stat small:empty{display:none}
+.actions{display:grid;grid-template-columns:1fr 1fr;align-items:center;gap:10px;margin-top:20px}
+.action{height:38px;display:inline-flex;align-items:center;justify-content:center;gap:7px;border:1px solid rgba(201,168,106,.42);background:rgba(5,13,29,.54);color:var(--gold);font:11px var(--serif);letter-spacing:.5px;text-decoration:none;cursor:pointer;padding:0 9px;white-space:nowrap}
+.action:hover{background:rgba(242,216,143,.08);border-color:rgba(242,216,143,.68)}
+.action svg{width:14px;height:14px}
+.signature{grid-column:1/-1;font-size:8px;line-height:1.4;letter-spacing:1.4px;color:rgba(240,230,203,.38);text-align:left}
+#shareNote{position:absolute;left:30px;right:30px;bottom:12px;text-align:center;font-size:10px;color:rgba(240,230,203,.5);opacity:0;transition:opacity .2s}
+#shareNote.show{opacity:1}
+@media(max-width:520px){
+body{padding:0}
+.poster{width:100%;height:auto;min-height:100svh;aspect-ratio:auto;border:0}
+.inner{padding:calc(28px + env(safe-area-inset-top)) 24px calc(24px + env(safe-area-inset-bottom))}
+.title-main,h1.title-main{font-size:32px}
+.title-action{font-size:18px}
+}
+</style>
+</head>
+<body>
+<main class="poster">
+<div class="inner">
+<p class="eyebrow">EVERYONE · EVERY CINEMA</p>
+__TITLE_BLOCK__
+<p class="subtitle">每个人的电影史 · 1895—2026</p>
+<img class="sky" src="/sky/__SLUG__/poster.svg" alt="__TITLE__ 电影史星图">
+<section class="stats" aria-label="观影统计">
+<div class="stat"><b>__FILMS__</b><span>部影片</span></div>
+<div class="stat"><b>__RUNTIME__</b><span>分钟</span><small>__RUNTIME_NOTE__</small></div>
+<div class="stat"><b>__YEARS__</b><span>观影年数</span></div>
+</section>
+<div class="actions">
+<button class="action" id="shareButton" type="button"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M8 10.5V2.5M5 5.4l3-3 3 3M3 8.5v4.2h10V8.5"/></svg><span>分享星图</span></button>
+<a class="action" href="/sky/__SLUG__">查看完整星图</a>
+<span class="signature">FILM HISTORY<br>CONSTELLATION</span>
+</div>
+<div id="shareNote" role="status">正在生成图片…</div>
+</div>
+</main>
+<script>
+(function(){
+var button=document.getElementById("shareButton"),note=document.getElementById("shareNote");
+function showNote(text){
+  note.textContent=text;note.classList.add("show");setTimeout(function(){note.classList.remove("show")},2200);
+}
+function fileNameFromTitle(){
+  var t=__TITLE_JS__;return (t?t.replace(/[\\/:*?"<>|]/g,"-"):"我的电影史")+"-星图.png";
+}
+button.addEventListener("click",async function(){
+  showNote("正在生成图片…");
+  try{
+    var res=await fetch("/sky/__SLUG__/poster.svg");
+    var svgText=await res.text();
+    var blob=new Blob([svgText],{type:"image/svg+xml;charset=utf-8"});
+    var url=URL.createObjectURL(blob);
+    var img=new Image();
+    await new Promise(function(resolve,reject){img.onload=resolve;img.onerror=reject;img.src=url;});
+    var canvas=document.createElement("canvas");
+    var scale=2;
+    canvas.width=img.width*scale;canvas.height=img.height*scale;
+    var ctx=canvas.getContext("2d");
+    ctx.fillStyle="#060F22";ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.drawImage(img,0,0,canvas.width,canvas.height);
+    var pngBlob=await new Promise(function(resolve){canvas.toBlob(resolve,"image/png");});
+    var pngFile=new File([pngBlob],fileNameFromTitle(),{type:"image/png"});
+    if(navigator.canShare&&navigator.canShare({files:[pngFile]})){
+      await navigator.share({files:[pngFile],title:__TITLE_JS__,text:"这是我的电影史星图"});
+      showNote("分享成功");URL.revokeObjectURL(url);return;
+    }
+    var pngUrl=URL.createObjectURL(pngBlob);
+    var a=document.createElement("a");a.href=pngUrl;a.download=fileNameFromTitle();
+    document.body.appendChild(a);a.click();document.body.removeChild(a);
+    URL.revokeObjectURL(pngUrl);URL.revokeObjectURL(url);
+    showNote("图片已保存");
+  }catch(err){
+    console.error(err);showNote("生成图片失败");
+  }
+});
+})();
+</script>
+</body>
+</html>

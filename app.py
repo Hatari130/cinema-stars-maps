@@ -2,8 +2,10 @@
 """每个人的电影史 · 后端
 匿名模型:每片天空 = 公开slug + 私密edit_token(链接即身份)。
 覆盖语义:重新导入 = 同一slug,天空生长。删除 = 真删。"""
-import json, os, random, re, secrets, sqlite3, datetime, time
-from fastapi import BackgroundTasks, FastAPI, UploadFile, Form, HTTPException
+import json, os, random, re, secrets, sqlite3, datetime, time, html as html_lib, urllib.parse
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from fastapi import BackgroundTasks, Body, FastAPI, Request, UploadFile, Form, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, Response, JSONResponse, RedirectResponse
 from pipeline import parse_csv, build_sky, poster_svg, Editorial
 from regions import REGIONS, CONTINENTS, band_of
@@ -12,7 +14,13 @@ from scrape_douban_collect import (
     HEADERS,
     PAGE_SIZE,
     MovieRow,
+    extract_countries,
+    extract_genres,
+    extract_profile_name,
+    extract_runtime_from_detail,
+    extract_runtime_minutes,
     extract_total,
+    extract_year,
     parse_page,
     request_html,
 )
@@ -23,12 +31,14 @@ APP_DB = os.path.join(BASE, "app.db")
 TPL = open(os.path.join(BASE, "templates", "sky.html"), encoding="utf-8").read()
 BUILD_TPL = open(os.path.join(BASE, "templates", "build.html"), encoding="utf-8").read()
 LANDING_TPL = open(os.path.join(BASE, "templates", "landing.html"), encoding="utf-8").read()
+SHARE_TPL = open(os.path.join(BASE, "templates", "share.html"), encoding="utf-8").read()
 ED = Editorial(os.path.join(BASE, "editorial.db"))
 DOUBAN_ID_RE = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
 DOUBAN_DELAY_MIN = float(os.getenv("DOUBAN_DELAY_MIN", "3.0"))
 DOUBAN_DELAY_MAX = float(os.getenv("DOUBAN_DELAY_MAX", "6.0"))
 DOUBAN_COOLDOWN_MIN = float(os.getenv("DOUBAN_COOLDOWN_MIN", "45.0"))
 DOUBAN_COOLDOWN_MAX = float(os.getenv("DOUBAN_COOLDOWN_MAX", "90.0"))
+DOUBAN_RUNTIME_WORKERS = max(1, int(os.getenv("DOUBAN_RUNTIME_WORKERS", "4")))
 
 def db():
     con = sqlite3.connect(APP_DB, timeout=30)
@@ -47,72 +57,21 @@ def db():
         douban_id TEXT NOT NULL, start INTEGER NOT NULL, total INTEGER NOT NULL,
         rows_json TEXT NOT NULL, fetched_at TEXT NOT NULL,
         PRIMARY KEY(douban_id, start))""")
+    con.execute("""CREATE TABLE IF NOT EXISTS douban_runtimes(
+        subject_id TEXT PRIMARY KEY, runtime_minutes INTEGER NOT NULL,
+        fetched_at TEXT NOT NULL)""")
+    con.execute("""CREATE TABLE IF NOT EXISTS poster_cache(
+        key TEXT PRIMARY KEY, title TEXT, year INTEGER, poster_url TEXT,
+        subject_url TEXT, source TEXT, status TEXT, fetched_at TEXT)""")
     return con
 
 app = FastAPI(title="每个人的电影史 API")
-
-LANDING = """<!DOCTYPE html><html lang="zh-CN"><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>每个人的电影史</title>
-<style>
-:root{--bg:#060F22;--gold:#F2D88F;--dim:#C9A86A;--ivory:#F0E6CB;--line:rgba(201,168,106,.34);--serif:"Songti SC","STSong","Noto Serif SC","SimSun",Georgia,serif}
-*{box-sizing:border-box}
-html,body{margin:0;min-height:100%;background:var(--bg);color:var(--dim);font-family:var(--serif)}
-body{min-height:100vh;display:grid;place-items:center;overflow:hidden}
-body:before{content:"";position:fixed;inset:-20%;background:
-radial-gradient(circle at 50% 48%,rgba(242,216,143,.13) 0 1px,transparent 1.5px),
-radial-gradient(circle at 28% 24%,rgba(217,194,138,.12) 0 1px,transparent 1.5px),
-radial-gradient(circle at 72% 34%,rgba(217,194,138,.1) 0 1px,transparent 1.5px);
-background-size:92px 92px,137px 137px,181px 181px;opacity:.55}
-body:after{content:"";position:fixed;width:min(72vw,680px);aspect-ratio:1;border:1px solid rgba(201,168,106,.16);border-radius:50%;box-shadow:0 0 0 44px rgba(201,168,106,.025),0 0 0 92px rgba(201,168,106,.018);transform:translateY(-2vh);pointer-events:none}
-main{position:relative;z-index:1;width:min(88vw,460px);text-align:center;padding:28px 0}
-h1{margin:0;color:var(--gold);font-weight:400;letter-spacing:5px;font-size:24px}
-.lead{margin:18px auto 0;font-size:13.5px;line-height:1.9;opacity:.86}
-form{margin:26px auto 0}
-.field{width:100%;height:48px;padding:0 16px;background:rgba(6,15,34,.68);border:1px solid var(--line);border-radius:8px;color:var(--ivory);font:15px var(--serif);text-align:center;outline:none}
-.field::placeholder{color:rgba(240,230,203,.48)}
-.field:focus{border-color:rgba(242,216,143,.72);box-shadow:0 0 0 3px rgba(242,216,143,.08)}
-.title{margin-top:10px;height:42px;font-size:13px}
-.submit{margin-top:20px;height:42px;padding:0 38px;border:1px solid rgba(201,168,106,.68);border-radius:999px;background:rgba(6,15,34,.34);color:var(--gold);font:14px var(--serif);letter-spacing:2px;cursor:pointer}
-.submit:hover{background:rgba(242,216,143,.09)}
-.submit[disabled]{cursor:wait;opacity:.7}
-details{margin-top:19px;font-size:12px;opacity:.72}
-summary{cursor:pointer;list-style:none}
-summary::-webkit-details-marker{display:none}
-.csv{margin-top:12px;padding-top:14px;border-top:1px solid rgba(201,168,106,.18)}
-.csv input[type=file]{display:block;margin:0 auto 12px;color:var(--dim);font-size:12px;max-width:100%}
-.foot{margin:24px 0 0;font-size:11px;opacity:.52;letter-spacing:.5px}
-@media(max-width:520px){h1{font-size:20px;letter-spacing:3px}.lead{font-size:13px}.field{text-align:left}.submit{width:100%}}
-</style>
-<body>
-<main>
-<h1>每个人的电影史</h1>
-<p class="lead">输入豆瓣 ID，生成你的电影史星空。</p>
-<form method="post" action="/api/jobs/douban" id="doubanForm">
-<input class="field" type="text" name="douban_id" inputmode="text" autocomplete="off" required
- placeholder="238593631 或豆瓣观影链接">
-<input class="field title" type="text" name="title" maxlength="40" placeholder="给这片天空起个名(可不填)">
-<button class="submit" type="submit">点亮星空</button>
-</form>
-<details>
-<summary>使用 CSV 导入</summary>
-<form class="csv" method="post" action="/api/skies" enctype="multipart/form-data">
-<input type="file" name="file" accept=".csv" required>
-<input class="field title" type="text" name="title" maxlength="40" placeholder="给这片天空起个名(可不填)">
-<button class="submit" type="submit">点亮星空</button>
-</form>
-</details>
-<p class="foot">匿名 · 无账号 · 链接即身份 · 可随时删除</p>
-</main>
-<script>
-document.querySelectorAll("form").forEach(function(form){
-  form.addEventListener("submit",function(){
-    var btn=form.querySelector("button[type=submit]");
-    if(btn){btn.disabled=true;btn.textContent="正在点亮";}
-  });
-});
-</script>
-</body></html>"""
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://movie.douban.com", "http://movie.douban.com"],
+    allow_methods=["POST", "OPTIONS"],
+    allow_headers=["*"],
+)
 
 def _now():
     return datetime.datetime.now(datetime.UTC).isoformat()
@@ -155,6 +114,7 @@ def _job_payload(row):
     redirect_url = None
     if row["slug"]:
         redirect_url = f"/sky/{row['slug']}?created=1&token={row['edit_token']}"
+    collect_url = _page_url(row["douban_id"], 0) if row["douban_id"] else ""
     return {
         "id": row["id"],
         "status": row["status"],
@@ -168,6 +128,8 @@ def _job_payload(row):
         "message": row["message"] or "",
         "error": row["error"] or "",
         "redirect_url": redirect_url,
+        "collect_url": collect_url,
+        "browser_import_code_url": f"/api/jobs/{row['id']}/browser-import-code",
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }
@@ -195,7 +157,13 @@ def _films_from_douban_rows(rows):
             continue
         seen.add(key)
         country = (row.country_or_region or "").strip()
-        films.append({"t": title, "y": y, "s": band_of(country), "c": country})
+        film = {"t": title, "y": y, "s": band_of(country), "c": country}
+        if getattr(row, "runtime_minutes", None):
+            film["rt"] = int(row.runtime_minutes)
+        genres = (getattr(row, "genres", None) or "").strip()
+        if genres:
+            film["g"] = genres.split()
+        films.append(film)
     return films
 
 def _page_url(user_id, start):
@@ -209,10 +177,159 @@ def _rows_json(rows):
         "movie_name": r.movie_name,
         "year": r.year,
         "country_or_region": r.country_or_region,
+        "runtime_minutes": getattr(r, "runtime_minutes", None),
+        "subject_url": getattr(r, "subject_url", ""),
+        "genres": getattr(r, "genres", ""),
+        "poster_url": getattr(r, "poster_url", ""),
     } for r in rows], ensure_ascii=False)
 
 def _rows_from_json(text):
-    return [MovieRow(**row) for row in json.loads(text)]
+    return [MovieRow(**{**row, "runtime_minutes": row.get("runtime_minutes"),
+                       "subject_url": row.get("subject_url", ""),
+                       "genres": row.get("genres", ""),
+                       "poster_url": row.get("poster_url", "")}) for row in json.loads(text)]
+
+def _browser_rows(raw_rows):
+    rows = []
+    for raw in raw_rows if isinstance(raw_rows, list) else []:
+        if not isinstance(raw, dict):
+            continue
+        title = (raw.get("movie_name") or raw.get("title") or "").strip()
+        intro = (raw.get("intro") or "").strip()
+        if not title:
+            continue
+        year = str(raw.get("year") or extract_year(intro) or "").strip()
+        country = (raw.get("country_or_region") or extract_countries(intro) or "").strip()
+        genres = (raw.get("genres") or extract_genres(intro) or "").strip()
+        runtime = raw.get("runtime_minutes") or extract_runtime_minutes(intro)
+        try:
+            runtime = int(runtime) if runtime else None
+        except (TypeError, ValueError):
+            runtime = None
+        rows.append(MovieRow(
+            movie_name=title,
+            year=year,
+            country_or_region=country,
+            runtime_minutes=runtime,
+            subject_url=(raw.get("subject_url") or "").strip(),
+            genres=genres,
+            poster_url=(raw.get("poster_url") or "").strip(),
+        ))
+    return rows
+
+def _find_cached_poster_url(title, year):
+    target_title = (title or "").strip()
+    try:
+        target_year = int(year)
+    except (TypeError, ValueError):
+        target_year = None
+    if not target_title or not target_year:
+        return ""
+    con = db()
+    rows = con.execute(
+        "SELECT rows_json FROM douban_pages WHERE rows_json LIKE ? ORDER BY fetched_at DESC",
+        (f"%{target_title}%",),
+    ).fetchall()
+    con.close()
+    for row in rows:
+        try:
+            movies = json.loads(row["rows_json"])
+        except Exception:
+            continue
+        for movie in movies:
+            if (movie.get("movie_name") or "").split(" / ")[0].strip() != target_title:
+                continue
+            try:
+                movie_year = int(movie.get("year") or 0)
+            except (TypeError, ValueError):
+                movie_year = 0
+            if movie_year == target_year and movie.get("poster_url"):
+                return movie["poster_url"].strip()
+    return ""
+
+def _poster_key(title, year):
+    compact_title = re.sub(r"\s+", "", (title or "").strip()).lower()
+    return f"{compact_title}|{int(year or 0)}"
+
+def _find_subject_url(title, year):
+    target_title = (title or "").strip()
+    try:
+        target_year = int(year)
+    except (TypeError, ValueError):
+        target_year = None
+    if not target_title or not target_year:
+        return ""
+    con = db()
+    rows = con.execute(
+        "SELECT rows_json FROM douban_pages WHERE rows_json LIKE ? ORDER BY fetched_at DESC",
+        (f"%{target_title}%",),
+    ).fetchall()
+    con.close()
+    for row in rows:
+        try:
+            movies = json.loads(row["rows_json"])
+        except Exception:
+            continue
+        for movie in movies:
+            if (movie.get("movie_name") or "").split(" / ")[0].strip() != target_title:
+                continue
+            try:
+                movie_year = int(movie.get("year") or 0)
+            except (TypeError, ValueError):
+                movie_year = 0
+            if movie_year == target_year and movie.get("subject_url"):
+                return movie["subject_url"].strip()
+    return ""
+
+def _cache_poster(title, year, poster_url, subject_url, status):
+    con = db()
+    con.execute(
+        """
+        INSERT OR REPLACE INTO poster_cache(key,title,year,poster_url,subject_url,source,status,fetched_at)
+        VALUES(?,?,?,?,?,?,?,?)
+        """,
+        (_poster_key(title, year), title, int(year or 0), poster_url or "", subject_url or "", "douban", status, _now()),
+    )
+    con.commit()
+    con.close()
+
+def _fetch_douban_poster(subject_url):
+    if not subject_url:
+        return ""
+    subject_id = _subject_id(subject_url)
+    if subject_id:
+        session = requests.Session()
+        session.headers.update({
+            **HEADERS,
+            "Referer": subject_url,
+        })
+        for url in (
+            f"https://m.douban.com/rexxar/api/v2/movie/{subject_id}",
+            f"https://m.douban.com/rexxar/api/v2/tv/{subject_id}",
+        ):
+            try:
+                response = session.get(url, timeout=15)
+                if response.ok:
+                    data = response.json()
+                    poster = (
+                        (data.get("pic") or {}).get("normal")
+                        or data.get("cover_url")
+                        or (((data.get("cover") or {}).get("image") or {}).get("normal") or {}).get("url")
+                        or (((data.get("cover") or {}).get("image") or {}).get("small") or {}).get("url")
+                    )
+                    if poster:
+                        return poster.strip()
+            except Exception:
+                pass
+    session = requests.Session()
+    session.headers.update(HEADERS)
+    html = request_html(session, subject_url, 18, 2, 0.8)
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(html, "html.parser")
+    img = soup.select_one("#mainpic img") or soup.select_one('img[rel="v:image"]')
+    if not img:
+        return ""
+    return (img.get("src") or "").strip()
 
 def _cached_page(user_id, start):
     con = db()
@@ -236,12 +353,236 @@ def _save_page(user_id, start, total, rows):
 def _fetch_page(session, user_id, start, known_total=None):
     cached = _cached_page(user_id, start)
     if cached:
-        return cached[0], cached[1], True
+        return cached[0], cached[1], True, ""
     html = request_html(session, _page_url(user_id, start), 20, 3, 1.0)
     total = known_total if known_total is not None else extract_total(html)
     rows = parse_page(html)
     _save_page(user_id, start, total, rows)
-    return total, rows, False
+    profile_name = extract_profile_name(html) if start == 0 else ""
+    return total, rows, False, profile_name
+
+def _fetch_profile_name(session, user_id):
+    try:
+        html = request_html(session, _page_url(user_id, 0), 20, 2, 1.0)
+    except Exception:
+        return ""
+    return extract_profile_name(html)
+
+def _browser_import_script(api_base, job_id, user_id):
+    return r"""
+(async function(){
+  const API_BASE = "__API_BASE__";
+  const JOB = "__JOB_ID__";
+  const USER = "__USER_ID__";
+  const PAGE_SIZE = 15;
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  function $(sel, root){ return root.querySelector(sel); }
+  function $$(sel, root){ return Array.from(root.querySelectorAll(sel)); }
+  function clean(s){ return (s || "").replace(/\s+/g, " ").trim(); }
+  function overlay(){
+    let el = document.getElementById("every-cinema-importer");
+    if (el) return el;
+    el = document.createElement("div");
+    el.id = "every-cinema-importer";
+    el.style.cssText = "position:fixed;right:18px;bottom:18px;z-index:2147483647;width:260px;padding:14px 16px;background:#08101f;color:#f2d88f;border:1px solid rgba(242,216,143,.45);border-radius:8px;font:14px/1.7 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;box-shadow:0 14px 42px rgba(0,0,0,.35)";
+    el.textContent = "电影史导入准备中";
+    document.body.appendChild(el);
+    return el;
+  }
+  const box = overlay();
+  function say(msg){ box.textContent = msg; }
+  function totalOf(doc){
+    const candidates = [clean(doc.title), clean($(".subject-num", doc)?.textContent)];
+    for (const text of candidates) {
+      const m = text && text.match(/(?:\/|影视\()\s*(\d+)/);
+      if (m) return parseInt(m[1], 10);
+    }
+    return 0;
+  }
+  function profileName(doc){
+    const candidates = [
+      clean($("#db-usr-profile .info h1", doc)?.textContent),
+      clean($("#db-usr-profile h1", doc)?.textContent),
+      clean($("h1", doc)?.textContent),
+      clean(doc.title)
+    ];
+    for (let text of candidates) {
+      text = text.replace(/\s*[-_—|]\s*豆瓣电影.*$/, "").replace(/^豆瓣电影\s*[-_—|]\s*/, "").replace(/\s*\(\d+\)\s*$/, "");
+      for (const suffix of ["看过的电影","想看的电影","在看的电视剧","看过的电视剧","的电影","的影视"]) {
+        if (text.endsWith(suffix)) text = text.slice(0, -suffix.length);
+      }
+      text = clean(text);
+      if (text && text !== "豆瓣电影" && text !== "我看过的电影") return text.slice(0, 40);
+    }
+    return "";
+  }
+  function rowsOf(doc){
+    return $$(".grid-view .item", doc).map(item => {
+      const title = clean($("li.title em", item)?.textContent);
+      const intro = clean($("li.intro", item)?.textContent);
+      const link = $("li.title a[href]", item);
+      const poster = $(".pic img[src]", item);
+      const year = (intro.match(/\b(?:18|19|20)\d{2}\b/) || [""])[0];
+      const runtime = (intro.match(/(\d{2,4})\s*分钟/) || [])[1] || "";
+      return {
+        movie_name: title,
+        year,
+        intro,
+        runtime_minutes: runtime ? parseInt(runtime, 10) : null,
+        subject_url: link ? link.href : "",
+        poster_url: poster ? poster.src : ""
+      };
+    }).filter(row => row.movie_name);
+  }
+  function pageUrl(start){
+    const url = new URL(location.href);
+    url.pathname = "/people/" + USER + "/collect";
+    url.searchParams.set("start", String(start));
+    url.searchParams.set("sort", "time");
+    url.searchParams.set("rating", "all");
+    url.searchParams.set("filter", "all");
+    url.searchParams.set("mode", "grid");
+    return url.toString();
+  }
+  async function upload(path, payload){
+    const r = await fetch(API_BASE + path, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(payload)
+    });
+    if (!r.ok) throw new Error(await r.text());
+    return r.json();
+  }
+  if (location.hostname !== "movie.douban.com" || !/\/people\/[^/]+\/collect/.test(location.pathname)) {
+    alert("请先打开你的豆瓣「看过」页面，再粘贴导入码。");
+    return;
+  }
+  const current = (location.pathname.match(/\/people\/([^/]+)\/collect/) || [])[1];
+  if (current && current !== USER && !confirm("当前页面的豆瓣 ID 和任务不一致，仍然继续导入当前页面吗？")) return;
+  let start = 0, total = 0, imported = 0;
+  try {
+    while (true) {
+      let doc;
+      if (start === 0) {
+        doc = document;
+      } else {
+        say("正在读取第 " + (Math.floor(start / PAGE_SIZE) + 1) + " 页");
+        const html = await fetch(pageUrl(start), {credentials:"include"}).then(r => {
+          if (!r.ok) throw new Error("豆瓣返回 " + r.status);
+          return r.text();
+        });
+        doc = new DOMParser().parseFromString(html, "text/html");
+      }
+      if (!total) total = totalOf(doc);
+      const rows = rowsOf(doc);
+      if (!rows.length) break;
+      await upload("/api/jobs/" + JOB + "/browser-import-page", {
+        start,
+        total: total || (start + rows.length),
+        profile_name: start === 0 ? profileName(doc) : "",
+        rows
+      });
+      imported += rows.length;
+      say("已读取 " + imported + (total ? " / " + total : "") + " 部");
+      if (total && start + PAGE_SIZE >= total) break;
+      start += PAGE_SIZE;
+      await sleep(550 + Math.random() * 650);
+    }
+    const done = await upload("/api/jobs/" + JOB + "/browser-import-finish", {total: total || imported});
+    say("导入完成，正在回到电影史页面");
+    setTimeout(() => { location.href = API_BASE + (done.build_url || ("/build/" + JOB)); }, 700);
+  } catch (err) {
+    console.error(err);
+    say("导入中断：" + (err && err.message ? err.message : err));
+    alert("导入中断：" + (err && err.message ? err.message : err));
+  }
+})();
+""".strip().replace("__API_BASE__", json.dumps(api_base)[1:-1]) \
+    .replace("__JOB_ID__", json.dumps(job_id)[1:-1]) \
+    .replace("__USER_ID__", json.dumps(user_id)[1:-1])
+
+def _subject_id(url):
+    match = re.search(r"/subject/(\d+)", url or "")
+    return match.group(1) if match else ""
+
+
+def _runtime_cache(subject_ids):
+    found = {}
+    con = db()
+    ids = list(dict.fromkeys(subject_ids))
+    for offset in range(0, len(ids), 800):
+        chunk = ids[offset:offset + 800]
+        marks = ",".join("?" for _ in chunk)
+        if marks:
+            for row in con.execute(
+                f"SELECT subject_id,runtime_minutes FROM douban_runtimes WHERE subject_id IN ({marks})",
+                chunk,
+            ):
+                found[row["subject_id"]] = row["runtime_minutes"]
+    con.close()
+    return found
+
+
+def _save_runtimes(items):
+    if not items:
+        return
+    con = db()
+    con.executemany(
+        "INSERT OR REPLACE INTO douban_runtimes(subject_id,runtime_minutes,fetched_at) VALUES(?,?,?)",
+        [(subject_id, minutes, _now()) for subject_id, minutes in items],
+    )
+    con.commit()
+    con.close()
+
+
+def _enrich_runtimes(job_id, rows):
+    candidates = [(row, _subject_id(row.subject_url)) for row in rows if not row.runtime_minutes]
+    candidates = [(row, subject_id) for row, subject_id in candidates if subject_id]
+    if not candidates:
+        return
+
+    cached = _runtime_cache(subject_id for _, subject_id in candidates)
+    pending = []
+    for row, subject_id in candidates:
+        if subject_id in cached:
+            row.runtime_minutes = cached[subject_id]
+        else:
+            pending.append((row, subject_id))
+
+    if not pending:
+        return
+
+    known = sum(1 for row in rows if row.runtime_minutes)
+    _update_job(job_id, message=f"正在补全影片时长 · 已知 {known}/{len(rows)} 部")
+
+    def fetch_runtime(item):
+        row, subject_id = item
+        session = requests.Session()
+        session.headers.update(HEADERS)
+        try:
+            html = request_html(session, row.subject_url, 15, 2, 0.5)
+            return row, subject_id, extract_runtime_from_detail(html)
+        except Exception:
+            return row, subject_id, None
+        finally:
+            session.close()
+
+    saved = []
+    with ThreadPoolExecutor(max_workers=DOUBAN_RUNTIME_WORKERS) as pool:
+        futures = [pool.submit(fetch_runtime, item) for item in pending]
+        for index, future in enumerate(as_completed(futures), 1):
+            row, subject_id, minutes = future.result()
+            if minutes:
+                row.runtime_minutes = minutes
+                saved.append((subject_id, minutes))
+            if len(saved) >= 25:
+                _save_runtimes(saved)
+                saved.clear()
+            if index % 25 == 0 or index == len(futures):
+                known = sum(1 for movie in rows if movie.runtime_minutes)
+                _update_job(job_id, message=f"正在补全影片时长 · 已知 {known}/{len(rows)} 部")
+    _save_runtimes(saved)
+
 
 def _set_job_progress(job_id, total, rows, current_start, message, status="running"):
     films = _films_from_douban_rows(rows)
@@ -255,6 +596,12 @@ def _set_job_progress(job_id, total, rows, current_start, message, status="runni
         message=message,
         error="",
     )
+
+def _douban_failure_message(exc):
+    text = str(exc)
+    if any(token in text for token in ("403", "sec.douban.com", "error code: 004", "Login")):
+        return "豆瓣暂时拒绝服务器读取，可换用浏览器导入"
+    return "豆瓣抓取失败"
 
 def _finish_douban_job(job_id, rows, total, partial, reason=""):
     row = _job(job_id)
@@ -302,7 +649,11 @@ def _run_douban_job(job_id):
     rows = []
     total = 0
     try:
-        total, first_rows, from_cache = _fetch_page(session, user_id, 0)
+        total, first_rows, from_cache, profile_name = _fetch_page(session, user_id, 0)
+        if not title:
+            title = profile_name or _fetch_profile_name(session, user_id)
+            if title:
+                _update_job(job_id, title=title)
         rows.extend(first_rows)
         _set_job_progress(
             job_id,
@@ -330,7 +681,7 @@ def _run_douban_job(job_id):
             )
             time.sleep(delay)
             try:
-                _, page_rows, _ = _fetch_page(session, user_id, start, total)
+                _, page_rows, _, _ = _fetch_page(session, user_id, start, total)
             except Exception as exc:
                 cooldown = random.uniform(DOUBAN_COOLDOWN_MIN, DOUBAN_COOLDOWN_MAX)
                 _update_job(
@@ -342,18 +693,20 @@ def _run_douban_job(job_id):
                 )
                 time.sleep(cooldown)
                 try:
-                    _, page_rows, _ = _fetch_page(session, user_id, start, total)
+                    _, page_rows, _, _ = _fetch_page(session, user_id, start, total)
                 except Exception as exc2:
                     _finish_douban_job(job_id, rows, total, True, str(exc2))
                     return
             rows.extend(page_rows)
             _set_job_progress(job_id, total, rows, start, f"已翻阅第 {page_no}/{page_count} 页")
-        _finish_douban_job(job_id, rows, total, False)
+        _enrich_runtimes(job_id, rows)
+        if _job(job_id)["status"] == "running":
+            _finish_douban_job(job_id, rows, total, False)
     except Exception as exc:
         if len(rows) >= 3:
             _finish_douban_job(job_id, rows, total, True, str(exc))
         else:
-            _update_job(job_id, status="failed", message="豆瓣抓取失败", error=str(exc)[:500])
+            _update_job(job_id, status="failed", message=_douban_failure_message(exc), error=str(exc)[:500])
 
 @app.get("/", response_class=HTMLResponse)
 def landing():
@@ -362,6 +715,7 @@ def landing():
 def _render(row):
     slug, title, sky_json, stats_json = row
     sky = json.loads(sky_json)
+    stats = json.loads(stats_json)
     js = lambda o: json.dumps(o, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
     reg_client = [{"n": r["n"], "c": r["c"], "a0": r["a0"], "a1": r["a1"]} for r in REGIONS]
     html = TPL.replace("__NM__", js(sky["nm"])) \
@@ -369,9 +723,36 @@ def _render(row):
               .replace("__DOTS__", js(sky["dots"])) \
               .replace("__REGIONS__", js(reg_client)) \
               .replace("__CONTINENTS__", js(CONTINENTS)) \
-              .replace("__TITLE__", (title or "我的电影史").replace("<", "&lt;")) \
-              .replace("__COUNT__", str(json.loads(stats_json)["films"]))
+              .replace("__STATS__", js(stats)) \
+              .replace("__SLUG__", slug) \
+              .replace("__TITLE__", html_lib.escape(title or "我的电影史", quote=True)) \
+              .replace("__TITLE_BLOCK__", _sky_title_block(title)) \
+              .replace("__COUNT__", str(stats["films"]))
     return html
+
+def _sky_title_block(title):
+    clean = (title or "我的电影史").strip()
+    if clean.endswith("看过") and len(clean) > 2:
+        name = clean[:-2].strip()
+        if name:
+            return '%s<span class="title-action">看过</span>' % html_lib.escape(name, quote=True)
+    return html_lib.escape(clean, quote=True)
+
+def _share_title_block(title):
+    clean = (title or "我的电影史").strip()
+    if clean.endswith("看过") and len(clean) > 2:
+        name = clean[:-2].strip()
+        if name:
+            return (
+                '<div class="title" aria-label="%s">'
+                '<span class="title-main">%s</span>'
+                '<span class="title-action">看过</span>'
+                '</div>'
+            ) % (
+                html_lib.escape(clean, quote=True),
+                html_lib.escape(name, quote=True),
+            )
+    return '<h1 class="title-main">%s</h1>' % html_lib.escape(clean, quote=True)
 
 @app.post("/api/skies")
 async def create_sky(file: UploadFile, title: str = Form("")):
@@ -410,6 +791,97 @@ def build_page(job_id: str):
 def job_json(job_id: str):
     return JSONResponse(_job_payload(_job(job_id)))
 
+@app.get("/api/jobs/{job_id}/browser-import-code")
+def browser_import_code(job_id: str, request: Request):
+    row = _job(job_id)
+    if not row:
+        raise HTTPException(404, "任务不存在")
+    api_base = str(request.base_url).rstrip("/")
+    code = _browser_import_script(api_base, job_id, row["douban_id"])
+    return Response(code, media_type="text/plain; charset=utf-8")
+
+@app.post("/api/jobs/{job_id}/browser-import-page")
+def browser_import_page(job_id: str, payload: dict = Body(...)):
+    row = _job(job_id)
+    if not row:
+        raise HTTPException(404, "任务不存在")
+    if row["slug"]:
+        return {"ok": True, "status": row["status"], "done": True}
+    try:
+        start = max(0, int(payload.get("start") or 0))
+    except (TypeError, ValueError):
+        start = 0
+    rows = _browser_rows(payload.get("rows") or [])
+    if not rows:
+        raise HTTPException(400, "没有可导入的影片")
+    try:
+        total = int(payload.get("total") or row["total"] or start + len(rows))
+    except (TypeError, ValueError):
+        total = start + len(rows)
+    profile_name = (payload.get("profile_name") or "").strip()[:40]
+    _save_page(row["douban_id"], start, total, rows)
+    all_rows, _ = _rows_from_cache(row["douban_id"])
+    fields = {}
+    if profile_name and not (row["title"] or "").strip():
+        fields["title"] = profile_name
+    if fields:
+        _update_job(job_id, **fields)
+    _set_job_progress(
+        job_id,
+        total,
+        all_rows,
+        start,
+        f"浏览器导入中 · 已读取 {len(all_rows)}/{total} 部",
+        status="browser_importing",
+    )
+    return {"ok": True, "fetched": len(all_rows), "total": total}
+
+@app.post("/api/jobs/{job_id}/browser-import-finish")
+def browser_import_finish(job_id: str, payload: dict = Body(default={})):
+    row = _job(job_id)
+    if not row:
+        raise HTTPException(404, "任务不存在")
+    if row["slug"]:
+        return {"ok": True, "status": row["status"], "build_url": f"/build/{job_id}"}
+    rows, _ = _rows_from_cache(row["douban_id"])
+    if len(rows) < 3:
+        raise HTTPException(400, "缓存数据不足，无法生成星空")
+    try:
+        total = int(payload.get("total") or row["total"] or len(rows))
+    except (TypeError, ValueError):
+        total = len(rows)
+    _update_job(job_id, status="finalizing", message="浏览器导入完成，正在生成星空", error="")
+    _finish_douban_job(job_id, rows, total, False)
+    return {"ok": True, "status": "complete", "build_url": f"/build/{job_id}"}
+
+def _rows_from_cache(user_id):
+    con = db()
+    pages = con.execute(
+        "SELECT start, rows_json FROM douban_pages WHERE douban_id=? ORDER BY start",
+        (user_id,),
+    ).fetchall()
+    con.close()
+    if not pages:
+        return [], 0
+    rows = []
+    for p in pages:
+        rows.extend(_rows_from_json(p["rows_json"]))
+    return rows, len(rows)
+
+@app.post("/api/jobs/{job_id}/finalize")
+def finalize_job(job_id: str):
+    row = _job(job_id)
+    if not row:
+        raise HTTPException(404, "任务不存在")
+    if row["status"] in ("complete", "partial", "failed"):
+        return {"ok": True, "status": row["status"]}
+    rows, _ = _rows_from_cache(row["douban_id"])
+    if len(rows) < 3:
+        raise HTTPException(400, "缓存数据不足，无法生成星空")
+    _update_job(job_id, status="finalizing", message="跳过时长补全，正在生成星空")
+    _finish_douban_job(job_id, rows, row["total"] or len(rows), True, "用户跳过时长补全")
+    return {"ok": True, "status": "partial"}
+
 @app.post("/api/jobs/{job_id}/resume")
 def resume_job(job_id: str, background_tasks: BackgroundTasks):
     row = _job(job_id)
@@ -443,6 +915,38 @@ def sky_json(slug: str):
     return JSONResponse({"title": row[0], "sky": json.loads(row[1]),
                          "stats": json.loads(row[2]), "created_at": row[3], "updated_at": row[4]})
 
+@app.get("/sky/{slug}/share", response_class=HTMLResponse)
+def share_sky(slug: str):
+    con = db()
+    row = con.execute("SELECT title,stats_json FROM skies WHERE slug=?", (slug,)).fetchone()
+    con.close()
+    if not row:
+        raise HTTPException(404)
+    title = row[0] or "我的电影史"
+    stats = json.loads(row[1])
+    films = int(stats.get("films") or 0)
+    runtime = int(stats.get("runtime_minutes") or 0)
+    runtime_known = int(stats.get("runtime_known") or 0)
+    years = int(stats.get("watch_years") or (
+        (stats.get("year_max") or 0) - (stats.get("year_min") or 0) + 1
+        if stats.get("year_max") and stats.get("year_min") else 0
+    ))
+    fmt = lambda value: f"{int(value):,}" if value else "--"
+    if runtime_known >= films and films:
+        runtime_note = ""
+    elif runtime_known:
+        runtime_note = f"已统计 {runtime_known:,} 部"
+    else:
+        runtime_note = "片长待补全"
+    return SHARE_TPL.replace("__TITLE_JS__", json.dumps(title, ensure_ascii=False)) \
+        .replace("__TITLE__", html_lib.escape(title, quote=True)) \
+        .replace("__TITLE_BLOCK__", _share_title_block(title)) \
+        .replace("__FILMS__", fmt(films)) \
+        .replace("__RUNTIME__", fmt(runtime)) \
+        .replace("__RUNTIME_NOTE__", runtime_note) \
+        .replace("__YEARS__", fmt(years)) \
+        .replace("__SLUG__", slug)
+
 @app.get("/sky/{slug}/poster.svg")
 def poster(slug: str):
     con = db()
@@ -452,6 +956,83 @@ def poster(slug: str):
         raise HTTPException(404)
     svg = poster_svg(json.loads(row[1]), row[0] or "我的电影史", json.loads(row[2])["films"])
     return Response(svg, media_type="image/svg+xml")
+
+@app.get("/api/poster")
+def movie_poster(title: str, year: int, m: int = 0):
+    if m < 3:
+        return {"ok": False, "reason": "below-threshold"}
+    key = _poster_key(title, year)
+    local_image_url = "/api/poster-image?" + urllib.parse.urlencode({"title": title, "year": year, "m": m})
+    con = db()
+    cached = con.execute("SELECT poster_url,status FROM poster_cache WHERE key=?", (key,)).fetchone()
+    con.close()
+    if cached and cached["status"] in ("ok", "missing-subject", "missing-poster"):
+        ok = cached["status"] == "ok" and bool(cached["poster_url"])
+        return {
+            "ok": ok,
+            "poster_url": cached["poster_url"] or "",
+            "image_url": local_image_url if ok else "",
+            "cached": True,
+        }
+
+    cached_poster = _find_cached_poster_url(title, year)
+    if cached_poster:
+        subject_url = _find_subject_url(title, year)
+        _cache_poster(title, year, cached_poster, subject_url, "ok")
+        return {
+            "ok": True,
+            "poster_url": cached_poster,
+            "image_url": local_image_url,
+            "cached": False,
+        }
+
+    subject_url = _find_subject_url(title, year)
+    if not subject_url:
+        _cache_poster(title, year, "", "", "missing-subject")
+        return {"ok": False, "reason": "missing-subject"}
+    try:
+        poster_url = _fetch_douban_poster(subject_url)
+    except Exception:
+        _cache_poster(title, year, "", subject_url, "failed")
+        return {"ok": False, "reason": "fetch-failed"}
+    if not poster_url:
+        _cache_poster(title, year, "", subject_url, "missing-poster")
+        return {"ok": False, "reason": "missing-poster"}
+    _cache_poster(title, year, poster_url, subject_url, "ok")
+    return {
+        "ok": True,
+        "poster_url": poster_url,
+        "image_url": local_image_url,
+        "cached": False,
+    }
+
+@app.get("/api/poster-image")
+def poster_image(title: str, year: int, m: int = 0):
+    if m < 3:
+        raise HTTPException(404)
+    key = _poster_key(title, year)
+    con = db()
+    row = con.execute("SELECT poster_url FROM poster_cache WHERE key=? AND status='ok'", (key,)).fetchone()
+    con.close()
+    if not row or not row["poster_url"]:
+        raise HTTPException(404)
+    try:
+        response = requests.get(
+            row["poster_url"],
+            headers={"User-Agent": HEADERS["User-Agent"], "Referer": "https://movie.douban.com/"},
+            timeout=15,
+        )
+        response.raise_for_status()
+    except Exception:
+        raise HTTPException(404)
+    content_type = response.headers.get("content-type") or "image/jpeg"
+    if not content_type.startswith("image/"):
+        raise HTTPException(404)
+    return Response(
+        response.content,
+        media_type=content_type,
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
 
 @app.post("/api/skies/{slug}/reimport")
 async def reimport(slug: str, file: UploadFile, token: str = Form(...)):

@@ -24,10 +24,18 @@ h1{margin:0;color:var(--gold);font-size:18px;font-weight:400;letter-spacing:4px}
 #barfill{position:absolute;inset:0 auto 0 0;width:0;background:var(--gold)}
 .actions{display:none;gap:10px;justify-content:flex-end;align-items:center}
 .actions.show{display:flex}
-.btn{height:38px;padding:0 18px;border:1px solid rgba(233,201,120,.55);border-radius:999px;background:rgba(8,9,8,.46);color:var(--gold);font:13px var(--serif);letter-spacing:1px;text-decoration:none;cursor:pointer}
+.btn{display:inline-flex;align-items:center;justify-content:center;height:38px;padding:0 18px;border:1px solid rgba(233,201,120,.55);border-radius:999px;background:rgba(8,9,8,.46);color:var(--gold);font:13px/1 var(--serif);letter-spacing:1px;text-decoration:none;cursor:pointer}
 .btn.secondary{border-color:rgba(158,175,194,.45);color:var(--blue)}
 .btn:hover{background:rgba(233,201,120,.08)}
 .error{color:var(--red)}
+.import-panel{display:none;align-self:end;max-width:760px;padding:18px 0 10px;border-top:1px solid rgba(233,201,120,.24)}
+.import-panel.show{display:block}
+.import-title{margin:0;color:var(--paper);font-size:17px;font-weight:400;letter-spacing:2px}
+.import-copy{margin:8px 0 14px;max-width:660px;color:var(--dim);font-size:13px;line-height:1.8}
+.import-actions{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px}
+.steps{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:0;padding:0;list-style:none}
+.steps li{border-top:1px solid rgba(158,175,194,.28);padding-top:8px;color:var(--blue);font-size:12px;line-height:1.6}
+.steps b{display:block;color:var(--gold);font-weight:400;font-variant-numeric:tabular-nums}
 @media(max-width:700px){
 .shell{padding:18px 16px max(16px,env(safe-area-inset-bottom))}
 header{display:block}.mark{display:none}
@@ -35,6 +43,7 @@ header{display:block}.mark{display:none}
 .bar{width:100%}
 .stat b{font-size:22px}
 .actions{justify-content:flex-start;flex-wrap:wrap}
+.steps{grid-template-columns:1fr 1fr}
 }
 </style>
 </head>
@@ -46,6 +55,20 @@ header{display:block}.mark{display:none}
 <div><h1>每个人的电影史</h1><p id="phase">观测台正在开机</p></div>
 <div class="mark">1895</div>
 </header>
+<section id="browserImport" class="import-panel" aria-live="polite">
+<h2 class="import-title">换用浏览器导入</h2>
+<p class="import-copy">豆瓣暂时拒绝了服务器读取。打开你的豆瓣看过页面，把导入码粘到控制台运行；它只读取当前页面能看到的观影记录，不读取账号密码。</p>
+<div class="import-actions">
+<a id="importOpen" class="btn" target="_blank" rel="noreferrer">打开豆瓣看过页面</a>
+<button id="copyImport" class="btn secondary" type="button">复制导入码</button>
+</div>
+<ol class="steps">
+<li><b>01</b>打开豆瓣看过页面</li>
+<li><b>02</b>按 F12 进入控制台</li>
+<li><b>03</b>粘贴导入码并回车</li>
+<li><b>04</b>保持页面打开</li>
+</ol>
+</section>
 <section class="readout" aria-live="polite">
 <div>
 <div class="stats">
@@ -58,6 +81,7 @@ header{display:block}.mark{display:none}
 <div id="actions" class="actions">
 <a id="enter" class="btn" href="#">进入星空</a>
 <button id="resume" class="btn secondary" type="button">继续补齐</button>
+<button id="finalize" class="btn secondary" type="button">直接生成</button>
 </div>
 </section>
 </main>
@@ -66,7 +90,8 @@ header{display:block}.mark{display:none}
 var JOB="__JOB_ID__";
 var cv=document.getElementById("plate"),ctx=cv.getContext("2d");
 var fetched=document.getElementById("fetched"),total=document.getElementById("total"),usable=document.getElementById("usable");
-var phase=document.getElementById("phase"),barfill=document.getElementById("barfill"),actions=document.getElementById("actions"),enter=document.getElementById("enter"),resume=document.getElementById("resume");
+var phase=document.getElementById("phase"),barfill=document.getElementById("barfill"),actions=document.getElementById("actions"),enter=document.getElementById("enter"),resume=document.getElementById("resume"),finalize=document.getElementById("finalize");
+var browserImport=document.getElementById("browserImport"),importOpen=document.getElementById("importOpen"),copyImport=document.getElementById("copyImport");
 var W=0,H=0,D=1,state={status:"queued",total:0,fetched:0,usable:0,message:"观测台正在开机",redirect_url:null};
 var redirected=false,lastPoll=0;
 function resize(){D=Math.min(window.devicePixelRatio||1,2);W=innerWidth;H=innerHeight;cv.width=W*D;cv.height=H*D;ctx.setTransform(D,0,0,D,0,0)}
@@ -103,19 +128,41 @@ function render(d){
  fetched.textContent=d.fetched||0;total.textContent=t||"--";usable.textContent=d.usable||0;barfill.style.width=p+"%";
  phase.textContent=d.message||d.status;
  phase.className=d.status==="failed"?"error":"";
- if(d.status==="partial"&&d.redirect_url){actions.classList.add("show");enter.href=d.redirect_url;resume.style.display="inline-block"}
- else if(d.status==="complete"&&d.redirect_url){actions.classList.add("show");enter.href=d.redirect_url;resume.style.display="none";if(!redirected){redirected=true;setTimeout(function(){location.href=d.redirect_url},1200)}}
- else if(d.status==="failed"){actions.classList.remove("show")}
+  if(d.collect_url)importOpen.href=d.collect_url;
+  browserImport.classList.toggle("show",d.status==="failed");
+  if(d.status==="partial"&&d.redirect_url){actions.classList.add("show");enter.href=d.redirect_url;resume.style.display="inline-block";finalize.style.display="none"}
+  else if(d.status==="complete"&&d.redirect_url){actions.classList.add("show");enter.href=d.redirect_url;resume.style.display="none";finalize.style.display="none";if(!redirected){redirected=true;setTimeout(function(){location.href=d.redirect_url},1200)}}
+  else if(d.status==="failed"){actions.classList.remove("show")}
+ else if(d.message&&d.message.indexOf("补全影片时长")!==-1){actions.classList.add("show");enter.href="#";finalize.style.display="inline-block";resume.style.display="none"}
  else{actions.classList.remove("show")}
 }
 async function poll(){
  try{var r=await fetch("/api/jobs/"+JOB+".json",{cache:"no-store"});if(r.ok)render(await r.json())}catch(e){}
- var terminal=state.status==="complete"||state.status==="failed"||state.status==="partial";
- if(!terminal)setTimeout(poll,1500);
+  var terminal=state.status==="complete"||state.status==="partial";
+  if(!terminal)setTimeout(poll,1500);
 }
 resume.addEventListener("click",async function(){
  resume.disabled=true;resume.textContent="继续中";
  try{await fetch("/api/jobs/"+JOB+"/resume",{method:"POST"});actions.classList.remove("show");setTimeout(poll,600)}finally{setTimeout(function(){resume.disabled=false;resume.textContent="继续补齐"},1800)}
+});
+finalize.addEventListener("click",async function(){
+  finalize.disabled=true;finalize.textContent="生成中";
+  try{var r=await fetch("/api/jobs/"+JOB+"/finalize",{method:"POST"});if(r.ok){actions.classList.remove("show");setTimeout(poll,600)}}finally{setTimeout(function(){finalize.disabled=false;finalize.textContent="直接生成"},1800)}
+});
+copyImport.addEventListener("click",async function(){
+  copyImport.disabled=true;copyImport.textContent="复制中";
+  try{
+    var r=await fetch("/api/jobs/"+JOB+"/browser-import-code",{cache:"no-store"});
+    var code=await r.text();
+    if(navigator.clipboard&&window.isSecureContext){await navigator.clipboard.writeText(code)}
+    else{var ta=document.createElement("textarea");ta.value=code;ta.style.position="fixed";ta.style.left="-9999px";document.body.appendChild(ta);ta.select();document.execCommand("copy");ta.remove()}
+    copyImport.textContent="已复制";
+    setTimeout(poll,1200);
+  }catch(e){
+    copyImport.textContent="复制失败";
+  }finally{
+    setTimeout(function(){copyImport.disabled=false;copyImport.textContent="复制导入码"},1800);
+  }
 });
 poll();
 })();

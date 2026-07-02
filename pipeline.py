@@ -38,7 +38,18 @@ def parse_csv(data: bytes):
         if key in seen:
             continue
         seen.add(key)
-        films.append({"t": title, "y": y, "s": band_of(r[2]), "c": r[2].strip()})
+        runtime = None
+        if len(r) >= 4:
+            m = re.search(r"\d+", r[3] or "")
+            if m:
+                runtime = int(m.group(0))
+        genres = r[4].strip() if len(r) >= 5 else ""
+        film = {"t": title, "y": y, "s": band_of(r[2]), "c": r[2].strip()}
+        if runtime:
+            film["rt"] = runtime
+        if genres:
+            film["g"] = genres.replace("/", " ").split()
+        films.append(film)
     return films
 
 # ---------- 编辑库 ----------
@@ -157,11 +168,17 @@ def build_sky(films, ed: Editorial):
         c = dict(u); c["note"] = "入选 %d 张清单" % u["m"]
         invs.append(c); break
 
-    nm = [{"t": f["t"], "y": f["y"], "s": f["s"], "m": f["m"]} for f in films]
+    nm = [{"t": f["t"], "y": f["y"], "s": f["s"], "m": f["m"],
+           **({"rt": f["rt"]} if f.get("rt") else {}),
+           **({"g": f["g"]} if f.get("g") else {})} for f in films]
     for c in invs:
         nm.append({"t": c["t"], "y": c["y"], "s": c["s"], "m": 0, "inv": 1, "note": c["note"]})
     stats = {
         "films": len(films),
+        "runtime_minutes": sum(int(f.get("rt") or 0) for f in films),
+        "runtime_known": sum(1 for f in films if f.get("rt")),
+        "watch_years": len({f["y"] for f in films}),
+        "region_count": len({f["s"] for f in films}),
         "bands": {REGION_NAMES[i]: sec_count[i] for i in range(len(REGIONS)) if sec_count[i]},
         "continents": {CONTINENTS[ci]: sum(sec_count[i] for i, r in enumerate(REGIONS) if r["c"] == ci) for ci in range(5)},
         "lit": sum(1 for f in films if f["m"] > 0),
@@ -173,12 +190,14 @@ def build_sky(films, ed: Editorial):
 
 # ---------- 海报SVG(与前端同一套几何) ----------
 Y0, Y1, RW, RIN = 1895, 2026, 150, 9
+EDGE_SOFT, EDGE_INNER, EDGE_DRIFT = .012, .976, .035
 
 def _pos(entries):
     for d in entries:
-        d["aa"] = .05 + hash_a(d["t"]) * .9
+        d["aa"] = EDGE_SOFT + hash_a(d["t"]) * EDGE_INNER
         d["rf"] = .12 + .76 * hash_a("\u0001" + d["t"])
         d["jj"] = hash_a("\u0002" + d["t"]) - .5
+        d["ed"] = hash_a("\u0003" + d["t"]) - .5
     grp = defaultdict(list)
     for d in entries:
         grp[(d["s"], d["y"])].append(d)
@@ -187,21 +206,21 @@ def _pos(entries):
             continue
         g.sort(key=lambda d: (d["aa"], d["t"]))
         n = len(g)
-        gap = min(.062, .92 / (n - 1))
+        gap = min(.062, EDGE_INNER / (n - 1))
         for i in range(1, n):
             if g[i]["aa"] < g[i - 1]["aa"] + gap:
                 g[i]["aa"] = g[i - 1]["aa"] + gap
-        if g[0]["aa"] < .04:
-            sh = .04 - g[0]["aa"]
+        if g[0]["aa"] < EDGE_SOFT:
+            sh = EDGE_SOFT - g[0]["aa"]
             for d in g:
                 d["aa"] += sh
-        if g[-1]["aa"] > .96:
+        if g[-1]["aa"] > 1 - EDGE_SOFT:
             a0 = g[0]["aa"]
-            sc = .92 / (g[-1]["aa"] - a0) if g[-1]["aa"] > a0 else 0
+            sc = EDGE_INNER / (g[-1]["aa"] - a0) if g[-1]["aa"] > a0 else 0
             for d in g:
-                d["aa"] = .04 + (d["aa"] - a0) * sc
+                d["aa"] = EDGE_SOFT + (d["aa"] - a0) * sc
         for d in g:
-            d["aa"] = max(.04, min(.96, d["aa"] + d["jj"] * gap * .55))
+            d["aa"] = max(-EDGE_SOFT, min(1 + EDGE_SOFT, d["aa"] + d["jj"] * gap * .55 + d["ed"] * EDGE_DRIFT))
     for d in entries:
         ye = min(d["y"] + d["rf"], Y1 - .05)
         r = RIN + (ye - Y0) / (Y1 - Y0) * (RW - RIN)
@@ -216,7 +235,7 @@ def _star(x, y, R):
     return " ".join("%.1f,%.1f" % q for q in p)
 
 def poster_svg(sky, title, count):
-    W, H, cx, cy, S = 800, 1000, 400, 470, 2.45
+    W, H, cx, cy, S = 800, 1000, 400, 470, 2.2
     nm = [dict(d) for d in sky["nm"]]
     _pos(nm)
     by_t = {d["t"]: d for d in nm}
@@ -227,20 +246,85 @@ def poster_svg(sky, title, count):
         r = (RIN + (y - Y0) / (Y1 - Y0) * (RW - RIN)) * S
         o.append('<circle cx="%d" cy="%d" r="%.1f" fill="none" stroke="rgba(201,168,106,.08)" stroke-width="1"/>' % (cx, cy, r))
     o.append('<circle cx="%d" cy="%d" r="%.1f" fill="none" stroke="rgba(201,168,106,.25)" stroke-width="1.2"/>' % (cx, cy, RW * S))
+    # 年份刻度(与前端一致:1895/1930/1960/2000,字号14)
+    for yr in (1930, 1960, 2000):
+        yr_r = (RIN + (yr - Y0) / (Y1 - Y0) * (RW - RIN)) * S
+        o.append('<text x="%.1f" y="%.1f" font-size="14" fill="rgba(150,160,170,.30)" font-family="Songti SC,Noto Serif SC,serif">%d</text>' % (cx + 10, cy - yr_r + 5, yr))
+    o.append('<text x="%d" y="%d" font-size="14" fill="rgba(150,160,170,.30)" font-family="Songti SC,Noto Serif SC,serif">1895</text>' % (cx + 8, cy - 6))
     spans = []
     for ci in range(5):
         bs = [r for r in REGIONS if r["c"] == ci]
-        spans.append((bs[0]["a0"], bs[-1]["a1"]))
+        spans.append((min(r["a0"] for r in bs), max(r["a1"] for r in bs)))
+    # 标签放置:大洲+国家/地区, 处理底部非洲/大洋洲重叠与左侧欧洲拥挤
+    bc = [0] * len(REGIONS)
+    for d in nm:
+        if not d.get("inv"):
+            bc[d["s"]] += 1
+
+    # 欧洲区域索引 (fr,it,de,su,uk,nord,ee,ib)
+    EUROPE = {11, 12, 13, 14, 15, 16, 17, 18}
+    # 非洲、大洋洲 (底部)
+    BOTTOM = {9, 10}
+
+    def _place(text, angle, fs, base_r, x_offset=0, y_offset=0, alpha=.55):
+        r = base_r
+        a = math.radians(angle)
+        x = cx + r * S * math.cos(a) + x_offset
+        y = cy + r * S * math.sin(a) + y_offset
+        if abs(x - cx) < 30:
+            anchor = "middle"
+        elif x > cx:
+            anchor = "start"
+        else:
+            anchor = "end"
+        letter = 3 if fs >= 15 else 1
+        return '<text x="%.1f" y="%.1f" text-anchor="%s" font-size="%d" letter-spacing="%d" fill="rgba(201,168,106,%.2f)" font-family="Songti SC,Noto Serif SC,serif">%s</text>' % (x, y, anchor, fs, letter, alpha, text)
+
+    # 大洲标签
     for ci, (a0, a1) in enumerate(spans):
-        g0 = math.radians(a0 - 90)
-        o.append('<line x1="%.1f" y1="%.1f" x2="%.1f" y2="%.1f" stroke="rgba(201,168,106,.28)" stroke-width="1"/>'
-                 % (cx + RW * S * math.cos(g0), cy + RW * S * math.sin(g0),
-                    cx + (RW + 5) * S * math.cos(g0), cy + (RW + 5) * S * math.sin(g0)))
-        am = math.radians((a0 + a1) / 2 - 90)
-        lx, ly = cx + (RW + 14) * S * math.cos(am), cy + (RW + 14) * S * math.sin(am)
-        anchor = "middle" if abs(lx - cx) < 40 else ("start" if lx > cx else "end")
-        o.append('<text x="%.1f" y="%.1f" text-anchor="%s" font-size="15" letter-spacing="3" fill="rgba(201,168,106,.55)" font-family="Songti SC,Noto Serif SC,serif">%s</text>'
-                 % (lx, ly + 5, anchor, CONTINENTS[ci]))
+        text = CONTINENTS[ci]
+        angle = (a0 + a1) / 2 - 90
+        x_offset = 0
+        y_offset = 0
+        base_r = RW + 8
+        if text == "非洲":
+            x_offset = 18
+            base_r = RW + 12
+        elif text == "大洋洲":
+            x_offset = -12
+            y_offset = 28
+            base_r = RW + 13
+        elif text == "欧洲":
+            x_offset = -18
+            y_offset = 18
+            base_r = RW + 14
+        o.append(_place(text, angle, 15, base_r, x_offset, y_offset, .42))
+
+    # 国家/地区标签(只显示有星的), 欧洲外扩、底部外扩并水平错开
+    for kb in sorted(range(len(REGIONS)), key=lambda k: (-bc[k], k)):
+        if bc[kb] == 0:
+            continue
+        rg = REGIONS[kb]
+        text = rg["n"]
+        if text in CONTINENTS:
+            continue
+        angle = (rg["a0"] + rg["a1"]) / 2 - 90
+        if kb in EUROPE:
+            r = RW + 5  # 欧洲外扩,缓解左侧拥挤
+        elif kb in BOTTOM:
+            r = RW + 2  # 非洲/大洋洲外扩
+        else:
+            r = RW + 2
+        x_offset = 0
+        if text == "非洲":
+            x_offset = 12
+        elif text == "大洋洲":
+            x_offset = -12
+        elif text == "意大利":
+            x_offset = -18
+        elif text == "西亚":
+            x_offset = 12
+        o.append(_place(text, angle, 11, r, x_offset))
     for ln in sky["lines"]:
         pts = [T(by_t[t]) for t in ln["g"] if t in by_t]
         if len(pts) >= 2:
@@ -276,9 +360,5 @@ def poster_svg(sky, title, count):
         else:
             o.append('<polygon points="%s" fill="rgba(217,194,138,.8)"/>' % _star(x, y, 3.2))
     o.append('<circle cx="%d" cy="%d" r="2.5" fill="#F2D88F"/>' % (cx, cy))
-    esc = lambda s: s.replace("&", "&amp;").replace("<", "&lt;")
-    o.append('<text x="%d" y="64" text-anchor="middle" font-size="30" letter-spacing="6" fill="#F2D88F" font-family="Songti SC,Noto Serif SC,serif">%s</text>' % (cx, esc(title)))
-    o.append('<text x="%d" y="92" text-anchor="middle" font-size="14" letter-spacing="2" fill="rgba(201,168,106,.8)" font-family="Songti SC,Noto Serif SC,serif">每个人的电影史 · 1895—2026 · %d 颗星</text>' % (cx, count))
-    o.append('<text x="%d" y="%d" text-anchor="middle" font-size="15" font-style="italic" fill="rgba(242,216,143,.9)" font-family="Songti SC,Noto Serif SC,serif">世上没有一部电影史,只有许多部。这一部,是你的。</text>' % (cx, H - 36))
     o.append("</svg>")
     return "\n".join(o)

@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+
+*.log
+uvicorn.current.*.log
+
+*.db.bak-*
+.workbuddy/
+
+douban_*_collect_movies.csv
+*.before-*.csv
