@@ -33,6 +33,9 @@ h1{margin:0;color:var(--gold);font-size:18px;font-weight:400;letter-spacing:4px}
 .import-title{margin:0;color:var(--paper);font-size:17px;font-weight:400;letter-spacing:2px}
 .import-copy{margin:8px 0 14px;max-width:660px;color:var(--dim);font-size:13px;line-height:1.8}
 .import-actions{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px}
+.console-hint{margin:0 0 14px;max-width:760px;padding:11px 13px;border:1px solid rgba(158,175,194,.28);border-radius:10px;background:rgba(158,175,194,.06);color:var(--paper);font-size:13px;line-height:1.8}
+.console-hint b{color:var(--gold);font-weight:400}
+.console-hint code{display:inline-block;margin:0 2px;padding:1px 6px;border:1px solid rgba(233,201,120,.24);border-radius:999px;color:var(--gold);font-family:Consolas,monospace;font-size:12px}
 .steps{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:0;padding:0;list-style:none}
 .steps li{border-top:1px solid rgba(158,175,194,.28);padding-top:8px;color:var(--blue);font-size:12px;line-height:1.6}
 .steps b{display:block;color:var(--gold);font-weight:400;font-variant-numeric:tabular-nums}
@@ -57,15 +60,16 @@ header{display:block}.mark{display:none}
 </header>
 <section id="browserImport" class="import-panel" aria-live="polite">
 <h2 class="import-title">换用浏览器导入</h2>
-<p class="import-copy">豆瓣暂时拒绝了服务器读取。打开你的豆瓣看过页面，把导入码粘到控制台运行；它只读取当前页面能看到的观影记录，不读取账号密码。</p>
+<p class="import-copy">豆瓣暂时拒绝了服务器读取。请用你自己的浏览器打开豆瓣看过页面，再把导入码粘到开发者工具的 Console/控制台里运行；它只读取当前页面能看到的观影记录，不读取账号密码。</p>
 <div class="import-actions">
 <a id="importOpen" class="btn" target="_blank" rel="noreferrer">打开豆瓣看过页面</a>
 <button id="copyImport" class="btn secondary" type="button">复制导入码</button>
 </div>
+<p class="console-hint"><b>粘贴位置：</b>在豆瓣页面按 <code>F12</code>，点上方的 <code>Console</code> 或 <code>控制台</code> 标签，把导入码粘到最下面带 <code>&gt;</code> 的输入行里，然后按回车。若 Chrome 提示不能粘贴，先在控制台输入 <code>allow pasting</code> 并回车，再粘贴导入码。</p>
 <ol class="steps">
 <li><b>01</b>打开豆瓣看过页面</li>
-<li><b>02</b>按 F12 进入控制台</li>
-<li><b>03</b>粘贴导入码并回车</li>
+<li><b>02</b>按 F12，点 Console/控制台</li>
+<li><b>03</b>粘到底部 &gt; 输入行并回车</li>
 <li><b>04</b>保持页面打开</li>
 </ol>
 </section>
@@ -156,12 +160,12 @@ copyImport.addEventListener("click",async function(){
     var code=await r.text();
     if(navigator.clipboard&&window.isSecureContext){await navigator.clipboard.writeText(code)}
     else{var ta=document.createElement("textarea");ta.value=code;ta.style.position="fixed";ta.style.left="-9999px";document.body.appendChild(ta);ta.select();document.execCommand("copy");ta.remove()}
-    copyImport.textContent="已复制";
+    copyImport.textContent="已复制，去 Console 粘贴";
     setTimeout(poll,1200);
   }catch(e){
     copyImport.textContent="复制失败";
   }finally{
-    setTimeout(function(){copyImport.disabled=false;copyImport.textContent="复制导入码"},1800);
+    setTimeout(function(){copyImport.disabled=false;copyImport.textContent="复制导入码"},2600);
   }
 });
 poll();
