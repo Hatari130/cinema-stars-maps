@@ -6,6 +6,7 @@
 <title>每个人的电影史 · __TITLE__</title>
 <style>
 :root{--gold:#F2D88F;--dim:#C9A86A;--faint:#D9C28A;--ivory:#F0E6CB;--bg:#060F22;--serif:"Songti SC","STSong","Noto Serif SC","SimSun",Georgia,serif}
+*{box-sizing:border-box}
 html,body{margin:0;height:100%;background:var(--bg);overflow:hidden}
 body{font-family:var(--serif);color:var(--dim);-webkit-font-smoothing:antialiased}
 #sky{position:fixed;inset:0;width:100%;height:100%;touch-action:none;cursor:grab;display:block}
@@ -55,6 +56,7 @@ body{font-family:var(--serif);color:var(--dim);-webkit-font-smoothing:antialiase
 #time::-moz-range-thumb{width:15px;height:15px;border:none;border-radius:50%;background:var(--gold)}
 #time:focus-visible{outline:1px solid rgba(242,216,143,.7);outline-offset:6px;border-radius:999px}
 #reset{right:18px;bottom:max(22px,env(safe-area-inset-bottom));width:38px;height:38px;display:none}
+#atlasbtn .atlas-label{display:none}
 #tip{display:none;max-width:280px;background:rgba(6,15,34,.93);border:1px solid rgba(201,168,106,.5);border-radius:10px;padding:11px 13px}
 #tipposter{display:none;width:132px;aspect-ratio:2/3;margin:4px auto 14px;border-radius:6px;object-fit:cover;border:1px solid rgba(201,168,106,.34);background:rgba(201,168,106,.08)}
 #tipname{font-size:14px;color:var(--gold);letter-spacing:1px}
@@ -85,16 +87,29 @@ body.silverplate #platelist{border-color:rgba(159,174,192,.35)}
 #thumb{right:16px;top:max(16px,env(safe-area-inset-top))}
 @media (max-width:880px){body.platemode #platelist{display:none}}
 @media (max-width:680px){
-#brand{left:20px;right:auto;top:18px;text-align:left}
-#brand h1{font-size:28px;letter-spacing:4px}
+#brand{left:18px;right:112px;top:max(14px,env(safe-area-inset-top));text-align:left}
+#brand h1{font-size:clamp(24px,9vw,34px);letter-spacing:4px;overflow-wrap:anywhere}
 #brand .title-action{margin-left:6px;letter-spacing:2px}
-#brand p,#insight{display:none}
-#tools{right:14px;top:16px}
-.tool-panel{right:14px;left:14px;width:auto}
-#bar{left:12px;right:12px;transform:none;justify-content:space-between;gap:9px;padding:18px 13px 8px 8px}
+#brand p{display:block;margin-top:8px;font-size:11px;line-height:1.5;letter-spacing:.8px;opacity:.58}
+#tools{right:14px;top:max(16px,env(safe-area-inset-top));gap:10px}
+.tool-panel{right:14px;left:14px;top:max(76px,calc(env(safe-area-inset-top) + 76px));width:auto;max-height:42svh;overflow:auto}
+#insight{left:12px;right:12px;top:auto;bottom:max(104px,calc(env(safe-area-inset-bottom) + 104px));width:auto;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;padding:10px;border:1px solid rgba(201,168,106,.28);border-radius:22px;background:rgba(6,15,34,.68);backdrop-filter:blur(10px)}
+.metric{grid-template-columns:1fr;gap:4px;align-items:start;min-width:0;padding:0 2px}
+.metric i{display:none}
+.metric b{display:block;font-size:clamp(19px,7vw,28px);letter-spacing:.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.metric span{display:block;margin:4px 0 0;font-size:10px;letter-spacing:.5px;line-height:1.2}
+.metric small{font-size:9px;line-height:1.25}
+.share-link{grid-column:1/-1;width:100%;height:38px;justify-content:center;margin-top:4px;padding:0 14px;font-size:12px;background:rgba(242,216,143,.08)}
+#bar{left:12px;right:12px;transform:none;justify-content:space-between;gap:9px;padding:16px 13px 8px 8px;bottom:max(12px,env(safe-area-inset-bottom))}
 #track{flex:1;width:auto;min-width:0}
 #epochs b{display:none}
 .yr{display:none}
+#atlasbtn{right:14px!important;bottom:max(252px,calc(env(safe-area-inset-bottom) + 252px))!important;width:auto;height:38px;border-radius:999px;padding:0 14px;gap:7px;background:rgba(6,15,34,.74);backdrop-filter:blur(8px)}
+#atlasbtn svg{width:15px;height:15px}
+#atlasbtn .atlas-label{display:inline;color:var(--gold);font-size:12px;letter-spacing:.8px;white-space:nowrap}
+body.platemode #platehead{top:max(74px,calc(env(safe-area-inset-top) + 74px));max-width:82vw}
+body.platemode #platenav{left:12px;right:12px;bottom:max(104px,calc(env(safe-area-inset-bottom) + 104px));justify-content:center}
+body.platemode #insight{display:none}
 }
 </style>
 </head>
@@ -138,7 +153,7 @@ body.silverplate #platelist{border-color:rgba(159,174,192,.35)}
 </div>
 <div id="platelist" class="hud"></div>
 <canvas id="thumb" class="hud" width="84" height="84" aria-hidden="true"></canvas>
-<button id="atlasbtn" class="gbtn hud" aria-label="图版集" style="right:18px;bottom:max(70px,env(safe-area-inset-bottom))"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M8 8L8 2.2A5.8 5.8 0 0 1 13 5.4z" fill="currentColor" opacity=".85"/></svg></button>
+<button id="atlasbtn" class="gbtn hud" aria-label="图版分析" style="right:18px;bottom:max(70px,env(safe-area-inset-bottom))"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M8 8L8 2.2A5.8 5.8 0 0 1 13 5.4z" fill="currentColor" opacity=".85"/></svg><span class="atlas-label">分析星图</span></button>
 <div id="tip" class="hud"><img id="tipposter" alt=""><div id="tipname"></div><div id="tipmeta"></div><div id="tipnote"></div></div>
 <script>
 (function(){
