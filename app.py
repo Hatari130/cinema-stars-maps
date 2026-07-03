@@ -793,7 +793,11 @@ def _share_card_svg(sky, title, stats):
         r = 1 + (i % 3) * 0.35
         op = 0.10 + (i % 5) * 0.035
         stars.append(f'<circle cx="{x}" cy="{y}" r="{r:.1f}" fill="#F0E6CB" opacity="{op:.2f}"/>')
-    action_x = min(890, 112 + len(title_name) * title_size * .62)
+    action_markup = (
+        f'<tspan dx="18" fill="#C9A86A" opacity=".78" font-family="Songti SC,STSong,serif" '
+        f'font-size="42" letter-spacing="7">{safe_action}</tspan>'
+        if safe_action else ""
+    )
     return f'''<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}">
 <defs>
   <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
@@ -805,8 +809,7 @@ def _share_card_svg(sky, title, stats):
 <rect x="1" y="1" width="{W-2}" height="{H-2}" fill="none" stroke="#C9A86A" stroke-opacity=".34"/>
 {''.join(stars)}
 <text x="96" y="120" fill="#F0E6CB" opacity=".45" font-family="Georgia,serif" font-size="19" letter-spacing="10">EVERYONE · EVERY CINEMA</text>
-<text x="96" y="245" fill="#F2D88F" font-family="Georgia,'Songti SC','STSong',serif" font-size="{title_size}" letter-spacing="12">{safe_title}</text>
-{f'<text x="{action_x:.0f}" y="240" fill="#C9A86A" opacity=".78" font-family="Songti SC,STSong,serif" font-size="42" letter-spacing="7">{safe_action}</text>' if safe_action else ""}
+<text x="96" y="245" fill="#F2D88F" font-family="Georgia,'Songti SC','STSong',serif" font-size="{title_size}" letter-spacing="12">{safe_title}{action_markup}</text>
 <text x="96" y="304" fill="#C9A86A" opacity=".74" font-family="Songti SC,STSong,serif" font-size="24" letter-spacing="3">每个人的电影史 · 1895—2026</text>
 <rect x="110" y="360" width="860" height="930" fill="#060F22" opacity=".52"/>
 <image x="140" y="390" width="800" height="870" preserveAspectRatio="xMidYMid meet" href="data:image/svg+xml;charset=utf-8,{poster_data}"/>
