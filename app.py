@@ -758,6 +758,77 @@ def _share_title_block(title):
             )
     return '<h1 class="title-main">%s</h1>' % html_lib.escape(clean, quote=True)
 
+def _share_card_svg(sky, title, stats):
+    W, H = 1080, 1920
+    clean_title = (title or "我的电影史").strip()
+    title_name, title_action = clean_title, ""
+    if clean_title.endswith("看过") and len(clean_title) > 2:
+        title_name = clean_title[:-2].strip() or clean_title
+        title_action = "看过"
+    title_size = 92 if len(title_name) <= 8 else max(48, 92 - (len(title_name) - 8) * 5)
+    safe_title = html_lib.escape(title_name, quote=True)
+    safe_action = html_lib.escape(title_action, quote=True)
+    poster = poster_svg(sky, clean_title, int(stats.get("films") or 0))
+    poster_data = urllib.parse.quote(poster)
+    films = int(stats.get("films") or 0)
+    runtime = int(stats.get("runtime_minutes") or 0)
+    runtime_known = int(stats.get("runtime_known") or 0)
+    years = int(stats.get("watch_years") or (
+        (stats.get("year_max") or 0) - (stats.get("year_min") or 0) + 1
+        if stats.get("year_max") and stats.get("year_min") else 0
+    ))
+    fmt = lambda value: f"{int(value):,}" if value else "--"
+    if runtime and runtime_known and runtime_known < films:
+        runtime_note = f"已统计 {runtime_known:,} 部"
+    elif not runtime:
+        runtime_note = "片长待补全"
+    else:
+        runtime_note = ""
+    stars = []
+    for i in range(90):
+        x = (97 * i + 53) % W
+        y = (151 * i + 89) % H
+        if 300 < y < 1280 and 110 < x < 970:
+            continue
+        r = 1 + (i % 3) * 0.35
+        op = 0.10 + (i % 5) * 0.035
+        stars.append(f'<circle cx="{x}" cy="{y}" r="{r:.1f}" fill="#F0E6CB" opacity="{op:.2f}"/>')
+    action_x = min(890, 112 + len(title_name) * title_size * .62)
+    return f'''<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}">
+<defs>
+  <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#07142B"/>
+    <stop offset="1" stop-color="#030917"/>
+  </linearGradient>
+</defs>
+<rect width="{W}" height="{H}" fill="url(#bg)"/>
+<rect x="1" y="1" width="{W-2}" height="{H-2}" fill="none" stroke="#C9A86A" stroke-opacity=".34"/>
+{''.join(stars)}
+<text x="96" y="120" fill="#F0E6CB" opacity=".45" font-family="Georgia,serif" font-size="19" letter-spacing="10">EVERYONE · EVERY CINEMA</text>
+<text x="96" y="245" fill="#F2D88F" font-family="Georgia,'Songti SC','STSong',serif" font-size="{title_size}" letter-spacing="12">{safe_title}</text>
+{f'<text x="{action_x:.0f}" y="240" fill="#C9A86A" opacity=".78" font-family="Songti SC,STSong,serif" font-size="42" letter-spacing="7">{safe_action}</text>' if safe_action else ""}
+<text x="96" y="304" fill="#C9A86A" opacity=".74" font-family="Songti SC,STSong,serif" font-size="24" letter-spacing="3">每个人的电影史 · 1895—2026</text>
+<rect x="110" y="360" width="860" height="930" fill="#060F22" opacity=".52"/>
+<image x="140" y="390" width="800" height="870" preserveAspectRatio="xMidYMid meet" href="data:image/svg+xml;charset=utf-8,{poster_data}"/>
+<line x1="96" y1="1360" x2="386" y2="1360" stroke="#C9A86A" stroke-opacity=".28"/>
+<line x1="416" y1="1360" x2="666" y2="1360" stroke="#C9A86A" stroke-opacity=".28"/>
+<line x1="696" y1="1360" x2="984" y2="1360" stroke="#C9A86A" stroke-opacity=".28"/>
+<text x="96" y="1435" fill="#F2D88F" font-family="Georgia,serif" font-size="52">{fmt(films)}</text>
+<text x="200" y="1435" fill="#C9A86A" opacity=".70" font-family="Songti SC,STSong,serif" font-size="20">部影片</text>
+<text x="416" y="1435" fill="#F2D88F" font-family="Georgia,serif" font-size="42">{fmt(runtime)}</text>
+<text x="510" y="1435" fill="#C9A86A" opacity=".70" font-family="Songti SC,STSong,serif" font-size="20">分钟</text>
+<text x="416" y="1485" fill="#F0E6CB" opacity=".34" font-family="Songti SC,STSong,serif" font-size="17">{html_lib.escape(runtime_note, quote=True)}</text>
+<text x="696" y="1435" fill="#F2D88F" font-family="Georgia,serif" font-size="52">{fmt(years)}</text>
+<text x="790" y="1435" fill="#C9A86A" opacity=".70" font-family="Songti SC,STSong,serif" font-size="20">观影年数</text>
+<rect x="96" y="1548" width="408" height="76" fill="#050D1D" fill-opacity=".54" stroke="#C9A86A" stroke-opacity=".42"/>
+<rect x="534" y="1548" width="450" height="76" fill="#050D1D" fill-opacity=".54" stroke="#C9A86A" stroke-opacity=".42"/>
+<text x="300" y="1598" text-anchor="middle" fill="#F2D88F" font-family="Songti SC,STSong,serif" font-size="22" letter-spacing="2">分享星图</text>
+<text x="759" y="1598" text-anchor="middle" fill="#F2D88F" font-family="Songti SC,STSong,serif" font-size="22" letter-spacing="2">查看完整星图</text>
+<text x="96" y="1688" fill="#F0E6CB" opacity=".38" font-family="Georgia,serif" font-size="16" letter-spacing="4">FILM HISTORY</text>
+<text x="96" y="1718" fill="#F0E6CB" opacity=".38" font-family="Georgia,serif" font-size="16" letter-spacing="4">CONSTELLATION</text>
+<text x="96" y="1818" fill="#C9A86A" opacity=".70" font-family="Georgia,serif" font-size="20" letter-spacing="1.5">https://cinema-stars-maps.onrender.com/</text>
+</svg>'''
+
 @app.post("/api/skies")
 async def create_sky(file: UploadFile, title: str = Form("")):
     films = parse_csv(await file.read())
@@ -954,6 +1025,16 @@ def share_sky(slug: str):
         .replace("__RUNTIME_NOTE__", runtime_note) \
         .replace("__YEARS__", fmt(years)) \
         .replace("__SLUG__", slug)
+
+@app.get("/sky/{slug}/share-card.svg")
+def share_card(slug: str):
+    con = db()
+    row = con.execute("SELECT title,sky_json,stats_json FROM skies WHERE slug=?", (slug,)).fetchone()
+    con.close()
+    if not row:
+        raise HTTPException(404)
+    svg = _share_card_svg(json.loads(row["sky_json"]), row["title"] or "我的电影史", json.loads(row["stats_json"]))
+    return Response(svg, media_type="image/svg+xml", headers={"Cache-Control": "public, max-age=3600"})
 
 @app.get("/sky/{slug}/poster.svg")
 def poster(slug: str):

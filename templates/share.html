@@ -36,6 +36,7 @@ h1.title-main{margin:13px 0 0;max-width:100%;color:var(--gold);font-size:34px;fo
 .action:hover{background:rgba(242,216,143,.08);border-color:rgba(242,216,143,.68)}
 .action svg{width:14px;height:14px}
 .signature{grid-column:1/-1;font-size:8px;line-height:1.4;letter-spacing:1.4px;color:rgba(240,230,203,.38);text-align:left}
+.site-url{grid-column:1/-1;margin-top:2px;font-size:8.5px;line-height:1.4;letter-spacing:.8px;color:rgba(201,168,106,.64);text-align:left;overflow-wrap:anywhere}
 #shareNote{position:absolute;left:30px;right:30px;bottom:12px;text-align:center;font-size:10px;color:rgba(240,230,203,.5);opacity:0;transition:opacity .2s}
 #shareNote.show{opacity:1}
 @media(max-width:520px){
@@ -63,6 +64,7 @@ __TITLE_BLOCK__
 <button class="action" id="shareButton" type="button"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M8 10.5V2.5M5 5.4l3-3 3 3M3 8.5v4.2h10V8.5"/></svg><span>分享星图</span></button>
 <a class="action" href="/sky/__SLUG__">查看完整星图</a>
 <span class="signature">FILM HISTORY<br>CONSTELLATION</span>
+<span class="site-url">https://cinema-stars-maps.onrender.com/</span>
 </div>
 <div id="shareNote" role="status">正在生成图片…</div>
 </div>
@@ -79,7 +81,7 @@ function fileNameFromTitle(){
 button.addEventListener("click",async function(){
   showNote("正在生成图片…");
   try{
-    var res=await fetch("/sky/__SLUG__/poster.svg");
+    var res=await fetch("/sky/__SLUG__/share-card.svg");
     var svgText=await res.text();
     var blob=new Blob([svgText],{type:"image/svg+xml;charset=utf-8"});
     var url=URL.createObjectURL(blob);
