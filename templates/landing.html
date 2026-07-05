@@ -28,7 +28,9 @@ form{margin:0}
 .btn[disabled]{cursor:wait;opacity:.68}
 .toggle{display:inline-block;margin-top:25px;color:#C9A86A;font-size:13px;opacity:.58;text-decoration:none;cursor:pointer}
 .toggle:hover{opacity:.9}
-.foot{margin:36px 0 0;font-size:12px;letter-spacing:1px;opacity:.42}
+.foot{margin:34px 0 0;font-size:12px;letter-spacing:1px;color:rgba(201,168,106,.46)}
+.credit-link{color:rgba(242,216,143,.72);text-decoration:none;border-bottom:1px solid rgba(242,216,143,.24);transition:color .2s,border-color .2s}
+.credit-link:hover,.credit-link:focus-visible{color:#F2D88F;border-color:rgba(242,216,143,.72);outline:none}
 .mode-csv #dbid{display:none}
 .mode-csv .fileline{display:block}
 @media(max-width:860px){
@@ -65,6 +67,7 @@ form{width:min(560px,100%)}
 <input class="field" type="text" name="title" maxlength="40" placeholder="给这片天空起个名（留空用豆瓣昵称）">
 <button type="submit" class="btn">点亮星空</button>
 </form>
+<p class="foot">created by <a class="credit-link" href="https://xhslink.com/m/2C7F1JCPJzd" target="_blank" rel="noopener noreferrer">Hatari</a></p>
 </div>
 <script>
 function fitEnglishTitle(){
