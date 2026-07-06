@@ -94,11 +94,6 @@ button.addEventListener("click",async function(){
     ctx.fillStyle="#060F22";ctx.fillRect(0,0,canvas.width,canvas.height);
     ctx.drawImage(img,0,0,canvas.width,canvas.height);
     var pngBlob=await new Promise(function(resolve){canvas.toBlob(resolve,"image/png");});
-    var pngFile=new File([pngBlob],fileNameFromTitle(),{type:"image/png"});
-    if(navigator.canShare&&navigator.canShare({files:[pngFile]})){
-      await navigator.share({files:[pngFile],title:__TITLE_JS__,text:"这是我的电影史星图"});
-      showNote("分享成功");URL.revokeObjectURL(url);return;
-    }
     var pngUrl=URL.createObjectURL(pngBlob);
     var a=document.createElement("a");a.href=pngUrl;a.download=fileNameFromTitle();
     document.body.appendChild(a);a.click();document.body.removeChild(a);
