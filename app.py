@@ -824,6 +824,23 @@ def _share_card_svg(sky, title, stats):
         if stats.get("year_max") and stats.get("year_min") else 0
     ))
     fmt = lambda value: f"{int(value):,}" if value else "--"
+    def metric_text(x, y, value, unit, number_size, shrink_at=6):
+        text = fmt(value)
+        size = number_size
+        if len(text) >= shrink_at + 2:
+            size -= 10
+        elif len(text) >= shrink_at:
+            size -= 6
+        return (
+            f'<text x="{x}" y="{y}" fill="#F2D88F" font-family="Georgia,serif" '
+            f'font-size="{size}">{html_lib.escape(text, quote=True)}'
+            f'<tspan dx="18" fill="#C9A86A" opacity=".70" '
+            f'font-family="Songti SC,STSong,serif" font-size="20">'
+            f'{html_lib.escape(unit, quote=True)}</tspan></text>'
+        )
+    films_metric = metric_text(96, 1435, films, "部影片", 52, 6)
+    runtime_metric = metric_text(416, 1435, runtime, "分钟", 42, 8)
+    years_metric = metric_text(696, 1435, years, "观影年数", 52, 5)
     if runtime and runtime_known and runtime_known < films:
         runtime_note = f"已统计 {runtime_known:,} 部"
     elif not runtime:
@@ -862,13 +879,10 @@ def _share_card_svg(sky, title, stats):
 <line x1="96" y1="1360" x2="386" y2="1360" stroke="#C9A86A" stroke-opacity=".28"/>
 <line x1="416" y1="1360" x2="666" y2="1360" stroke="#C9A86A" stroke-opacity=".28"/>
 <line x1="696" y1="1360" x2="984" y2="1360" stroke="#C9A86A" stroke-opacity=".28"/>
-<text x="96" y="1435" fill="#F2D88F" font-family="Georgia,serif" font-size="52">{fmt(films)}</text>
-<text x="200" y="1435" fill="#C9A86A" opacity=".70" font-family="Songti SC,STSong,serif" font-size="20">部影片</text>
-<text x="416" y="1435" fill="#F2D88F" font-family="Georgia,serif" font-size="42">{fmt(runtime)}</text>
-<text x="510" y="1435" fill="#C9A86A" opacity=".70" font-family="Songti SC,STSong,serif" font-size="20">分钟</text>
+{films_metric}
+{runtime_metric}
 <text x="416" y="1485" fill="#F0E6CB" opacity=".34" font-family="Songti SC,STSong,serif" font-size="17">{html_lib.escape(runtime_note, quote=True)}</text>
-<text x="696" y="1435" fill="#F2D88F" font-family="Georgia,serif" font-size="52">{fmt(years)}</text>
-<text x="790" y="1435" fill="#C9A86A" opacity=".70" font-family="Songti SC,STSong,serif" font-size="20">观影年数</text>
+{years_metric}
 <rect x="96" y="1548" width="408" height="76" fill="#050D1D" fill-opacity=".54" stroke="#C9A86A" stroke-opacity=".42"/>
 <rect x="534" y="1548" width="450" height="76" fill="#050D1D" fill-opacity=".54" stroke="#C9A86A" stroke-opacity=".42"/>
 <text x="300" y="1598" text-anchor="middle" fill="#F2D88F" font-family="Songti SC,STSong,serif" font-size="22" letter-spacing="2">分享星图</text>
