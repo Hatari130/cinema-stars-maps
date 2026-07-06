@@ -874,22 +874,22 @@ def _share_card_svg(sky, title, stats):
 <text x="96" y="120" fill="#F0E6CB" opacity=".45" font-family="Georgia,serif" font-size="19" letter-spacing="10">EVERYONE · EVERY CINEMA</text>
 <text x="96" y="245" fill="#F2D88F" font-family="Georgia,'Songti SC','STSong',serif" font-size="{title_size}" letter-spacing="12">{safe_title}{action_markup}</text>
 <text x="96" y="304" fill="#C9A86A" opacity=".74" font-family="Songti SC,STSong,serif" font-size="24" letter-spacing="3">每个人的电影史 · 1895—2026</text>
-<rect x="110" y="360" width="860" height="930" fill="#060F22" opacity=".52"/>
-<image x="140" y="390" width="800" height="870" preserveAspectRatio="xMidYMid meet" href="data:image/svg+xml;charset=utf-8,{poster_data}"/>
-<line x1="96" y1="1360" x2="386" y2="1360" stroke="#C9A86A" stroke-opacity=".28"/>
-<line x1="416" y1="1360" x2="666" y2="1360" stroke="#C9A86A" stroke-opacity=".28"/>
-<line x1="696" y1="1360" x2="984" y2="1360" stroke="#C9A86A" stroke-opacity=".28"/>
+<rect x="96" y="360" width="888" height="980" fill="#060F22" opacity=".52"/>
+<image x="110" y="386" width="860" height="950" preserveAspectRatio="xMidYMid meet" href="data:image/svg+xml;charset=utf-8,{poster_data}"/>
+<line x1="96" y1="1394" x2="386" y2="1394" stroke="#C9A86A" stroke-opacity=".28"/>
+<line x1="416" y1="1394" x2="666" y2="1394" stroke="#C9A86A" stroke-opacity=".28"/>
+<line x1="696" y1="1394" x2="984" y2="1394" stroke="#C9A86A" stroke-opacity=".28"/>
 {films_metric}
 {runtime_metric}
 <text x="416" y="1485" fill="#F0E6CB" opacity=".34" font-family="Songti SC,STSong,serif" font-size="17">{html_lib.escape(runtime_note, quote=True)}</text>
 {years_metric}
-<rect x="96" y="1548" width="408" height="76" fill="#050D1D" fill-opacity=".54" stroke="#C9A86A" stroke-opacity=".42"/>
-<rect x="534" y="1548" width="450" height="76" fill="#050D1D" fill-opacity=".54" stroke="#C9A86A" stroke-opacity=".42"/>
-<text x="300" y="1598" text-anchor="middle" fill="#F2D88F" font-family="Songti SC,STSong,serif" font-size="22" letter-spacing="2">分享星图</text>
-<text x="759" y="1598" text-anchor="middle" fill="#F2D88F" font-family="Songti SC,STSong,serif" font-size="22" letter-spacing="2">查看完整星图</text>
-<text x="96" y="1688" fill="#F0E6CB" opacity=".38" font-family="Georgia,serif" font-size="16" letter-spacing="4">FILM HISTORY</text>
-<text x="96" y="1718" fill="#F0E6CB" opacity=".38" font-family="Georgia,serif" font-size="16" letter-spacing="4">CONSTELLATION</text>
-<text x="96" y="1818" fill="#C9A86A" opacity=".70" font-family="Georgia,serif" font-size="20" letter-spacing="1.5">https://cinema-stars-maps.onrender.com/</text>
+<rect x="96" y="1578" width="408" height="76" fill="#050D1D" fill-opacity=".54" stroke="#C9A86A" stroke-opacity=".42"/>
+<rect x="534" y="1578" width="450" height="76" fill="#050D1D" fill-opacity=".54" stroke="#C9A86A" stroke-opacity=".42"/>
+<text x="300" y="1628" text-anchor="middle" fill="#F2D88F" font-family="Songti SC,STSong,serif" font-size="22" letter-spacing="2">分享星图</text>
+<text x="759" y="1628" text-anchor="middle" fill="#F2D88F" font-family="Songti SC,STSong,serif" font-size="22" letter-spacing="2">查看完整星图</text>
+<text x="96" y="1724" fill="#F0E6CB" opacity=".38" font-family="Georgia,serif" font-size="16" letter-spacing="4">FILM HISTORY</text>
+<text x="96" y="1754" fill="#F0E6CB" opacity=".38" font-family="Georgia,serif" font-size="16" letter-spacing="4">CONSTELLATION</text>
+<text x="96" y="1848" fill="#C9A86A" opacity=".70" font-family="Georgia,serif" font-size="20" letter-spacing="1.5">https://cinema-stars-maps.onrender.com/</text>
 </svg>'''
 
 @app.post("/api/skies")
