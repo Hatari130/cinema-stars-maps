@@ -350,8 +350,8 @@ def _save_page(user_id, start, total, rows):
     )
     con.commit(); con.close()
 
-def _fetch_page(session, user_id, start, known_total=None):
-    cached = _cached_page(user_id, start)
+def _fetch_page(session, user_id, start, known_total=None, use_cache=True):
+    cached = _cached_page(user_id, start) if use_cache else None
     if cached:
         return cached[0], cached[1], True, ""
     html = request_html(session, _page_url(user_id, start), 20, 3, 1.0)
@@ -360,6 +360,31 @@ def _fetch_page(session, user_id, start, known_total=None):
     _save_page(user_id, start, total, rows)
     profile_name = extract_profile_name(html) if start == 0 else ""
     return total, rows, False, profile_name
+
+def _cache_summary(user_id):
+    con = db()
+    pages = con.execute(
+        "SELECT start,total,rows_json,fetched_at FROM douban_pages WHERE douban_id=? ORDER BY start",
+        (user_id,),
+    ).fetchall()
+    con.close()
+    rows_count = 0
+    total = 0
+    fetched_at = ""
+    starts = []
+    for page in pages:
+        starts.append(page["start"])
+        total = max(total, int(page["total"] or 0))
+        fetched_at = max(fetched_at, page["fetched_at"] or "")
+        rows_count += len(_rows_from_json(page["rows_json"]))
+    return {
+        "has_cache": bool(pages),
+        "pages": len(pages),
+        "rows": rows_count,
+        "total": total,
+        "starts": starts,
+        "fetched_at": fetched_at,
+    }
 
 def _fetch_profile_name(session, user_id):
     try:
@@ -587,6 +612,16 @@ def _enrich_runtimes(job_id, rows):
                 _update_job(job_id, message=f"正在补全影片时长 · 已知 {known}/{len(rows)} 部")
     _save_runtimes(saved)
 
+def _apply_cached_runtimes(rows):
+    candidates = [(row, _subject_id(row.subject_url)) for row in rows if not row.runtime_minutes]
+    candidates = [(row, subject_id) for row, subject_id in candidates if subject_id]
+    if not candidates:
+        return
+    cached = _runtime_cache(subject_id for _, subject_id in candidates)
+    for row, subject_id in candidates:
+        if subject_id in cached:
+            row.runtime_minutes = cached[subject_id]
+
 
 def _set_job_progress(job_id, total, rows, current_start, message, status="running"):
     films = _films_from_douban_rows(rows)
@@ -641,7 +676,7 @@ def _finish_douban_job(job_id, rows, total, partial, reason=""):
         edit_token=token,
     )
 
-def _run_douban_job(job_id):
+def _run_douban_job(job_id, mode="normal"):
     row = _job(job_id)
     if not row:
         return
@@ -653,7 +688,18 @@ def _run_douban_job(job_id):
     rows = []
     total = 0
     try:
-        total, first_rows, from_cache, profile_name = _fetch_page(session, user_id, 0)
+        if mode == "cache_only":
+            rows, cached_total = _rows_from_cache(user_id)
+            if len(rows) >= 3:
+                total = cached_total or len(rows)
+                _set_job_progress(job_id, total, rows, 0, "正在读取缓存观影记录")
+                _apply_cached_runtimes(rows)
+                if _job(job_id)["status"] == "running":
+                    _finish_douban_job(job_id, rows, total, cached_total and len(rows) < cached_total, "使用缓存生成")
+                return
+            _update_job(job_id, message="缓存数据不足，正在重新连接豆瓣")
+        use_cache = mode != "refresh"
+        total, first_rows, from_cache, profile_name = _fetch_page(session, user_id, 0, use_cache=use_cache)
         if not title:
             title = profile_name or _fetch_profile_name(session, user_id)
             if title:
@@ -667,7 +713,7 @@ def _run_douban_job(job_id):
             "读取缓存页" if from_cache else "正在翻阅第 1 页",
         )
         for start in range(PAGE_SIZE, total, PAGE_SIZE):
-            cached = _cached_page(user_id, start)
+            cached = _cached_page(user_id, start) if use_cache else None
             if cached:
                 _, page_rows = cached
                 rows.extend(page_rows)
@@ -685,7 +731,7 @@ def _run_douban_job(job_id):
             )
             time.sleep(delay)
             try:
-                _, page_rows, _, _ = _fetch_page(session, user_id, start, total)
+                _, page_rows, _, _ = _fetch_page(session, user_id, start, total, use_cache=use_cache)
             except Exception as exc:
                 cooldown = random.uniform(DOUBAN_COOLDOWN_MIN, DOUBAN_COOLDOWN_MAX)
                 _update_job(
@@ -697,7 +743,7 @@ def _run_douban_job(job_id):
                 )
                 time.sleep(cooldown)
                 try:
-                    _, page_rows, _, _ = _fetch_page(session, user_id, start, total)
+                    _, page_rows, _, _ = _fetch_page(session, user_id, start, total, use_cache=use_cache)
                 except Exception as exc2:
                     _finish_douban_job(job_id, rows, total, True, str(exc2))
                     return
@@ -840,14 +886,25 @@ async def create_sky(file: UploadFile, title: str = Form("")):
     sky, stats = build_sky(films, ED)
     return _store_sky(title, sky, stats)
 
+@app.get("/api/douban-cache")
+def douban_cache(douban_id: str):
+    user_id = _douban_user_id(douban_id)
+    summary = _cache_summary(user_id)
+    summary["douban_id"] = user_id
+    return JSONResponse(summary)
+
 @app.post("/api/jobs/douban")
 @app.post("/api/skies/douban")
 async def create_douban_job(
     background_tasks: BackgroundTasks,
     douban_id: str = Form(...),
     title: str = Form(""),
+    import_mode: str = Form("normal"),
 ):
     user_id = _douban_user_id(douban_id)
+    mode = (import_mode or "normal").strip().lower()
+    if mode not in ("normal", "cache", "refresh"):
+        mode = "normal"
     job_id = secrets.token_urlsafe(10)
     now = _now()
     con = db()
@@ -856,7 +913,7 @@ async def create_douban_job(
         (job_id, "douban", "queued", user_id, title.strip()[:40], "等待观测台启动", now, now),
     )
     con.commit(); con.close()
-    background_tasks.add_task(_run_douban_job, job_id)
+    background_tasks.add_task(_run_douban_job, job_id, "cache_only" if mode == "cache" else mode)
     return RedirectResponse(url=f"/build/{job_id}", status_code=303)
 
 @app.get("/build/{job_id}", response_class=HTMLResponse)
@@ -939,16 +996,18 @@ def browser_import_finish(job_id: str, payload: dict = Body(default={})):
 def _rows_from_cache(user_id):
     con = db()
     pages = con.execute(
-        "SELECT start, rows_json FROM douban_pages WHERE douban_id=? ORDER BY start",
+        "SELECT start, total, rows_json FROM douban_pages WHERE douban_id=? ORDER BY start",
         (user_id,),
     ).fetchall()
     con.close()
     if not pages:
         return [], 0
     rows = []
+    total = 0
     for p in pages:
+        total = max(total, int(p["total"] or 0))
         rows.extend(_rows_from_json(p["rows_json"]))
-    return rows, len(rows)
+    return rows, total or len(rows)
 
 @app.post("/api/jobs/{job_id}/finalize")
 def finalize_job(job_id: str):

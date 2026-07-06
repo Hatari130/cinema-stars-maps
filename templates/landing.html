@@ -26,6 +26,12 @@ form{margin:0}
 .btn{display:inline-flex;align-items:center;justify-content:center;height:50px;min-width:188px;margin-top:13px;padding:0 38px;background:transparent;border:1px solid rgba(201,168,106,.55);border-radius:999px;color:#F2D88F;font:16px inherit;letter-spacing:4px;cursor:pointer;transition:background .25s,border-color .25s,opacity .25s}
 .btn:hover{background:rgba(242,216,143,.08);border-color:rgba(242,216,143,.85)}
 .btn[disabled]{cursor:wait;opacity:.68}
+.cache-choice{display:none;margin:0 0 18px;padding:15px 16px;border:1px solid rgba(201,168,106,.34);border-radius:12px;background:rgba(6,15,34,.58)}
+.cache-choice.show{display:block}
+.cache-choice p{margin:0 0 12px;color:rgba(240,230,203,.76);font-size:13px;line-height:1.7}
+.cache-actions{display:flex;flex-wrap:wrap;gap:10px}
+.cache-actions .btn{height:38px;min-width:0;margin:0;padding:0 17px;font-size:13px;letter-spacing:1.5px}
+.cache-actions .btn.secondary{border-color:rgba(240,230,203,.28);color:rgba(240,230,203,.74)}
 .toggle{display:inline-block;margin-top:25px;color:#C9A86A;font-size:13px;opacity:.58;text-decoration:none;cursor:pointer}
 .toggle:hover{opacity:.9}
 .foot{margin:34px 0 0;font-size:12px;letter-spacing:1px;color:rgba(201,168,106,.46)}
@@ -65,6 +71,14 @@ form{width:min(560px,100%)}
 <input class="field" type="text" name="douban_id" id="dbid" autocomplete="off" inputmode="text" required placeholder="豆瓣用户 ID">
 <div class="fileline" id="csvwrap"><input type="file" name="file" accept=".csv"></div>
 <input class="field" type="text" name="title" maxlength="40" placeholder="给这片天空起个名（留空用豆瓣昵称）">
+<input type="hidden" name="import_mode" id="importMode" value="normal">
+<div id="cacheChoice" class="cache-choice" aria-live="polite">
+<p id="cacheMessage">这个豆瓣 ID 已有缓存。你可以立刻用缓存生成，也可以重新读取豆瓣更新缓存。</p>
+<div class="cache-actions">
+<button type="button" class="btn" id="useCache">用缓存生成</button>
+<button type="button" class="btn secondary" id="refreshCache">重新读取豆瓣</button>
+</div>
+</div>
 <button type="submit" class="btn">点亮星空</button>
 </form>
 <p class="foot">created by <a class="credit-link" href="https://xhslink.com/m/2C7F1JCPJzd" target="_blank" rel="noopener noreferrer">Hatari</a></p>
@@ -89,16 +103,48 @@ function fitEnglishTitle(){
 fitEnglishTitle();
 addEventListener("resize",fitEnglishTitle);
 var form=document.getElementById("mainform"),dbid=document.getElementById("dbid"),csv=document.querySelector("#csvwrap input"),csvMode=false;
+var importMode=document.getElementById("importMode"),cacheChoice=document.getElementById("cacheChoice"),cacheMessage=document.getElementById("cacheMessage"),useCache=document.getElementById("useCache"),refreshCache=document.getElementById("refreshCache");
 function toggleCsvMode(){
   csvMode=!csvMode;
   document.body.classList.toggle("mode-csv",csvMode);
   form.action=csvMode?"/api/skies":"/api/jobs/douban";
   form.enctype=csvMode?"multipart/form-data":"application/x-www-form-urlencoded";
   dbid.required=!csvMode;csv.required=csvMode;
+  cacheChoice.classList.remove("show");importMode.value="normal";
 }
-form.addEventListener("submit",function(){
+function setBusy(text){
   var btn=form.querySelector("button[type=submit]");
-  btn.disabled=true;btn.textContent=csvMode?"正在导入":"正在点亮";
+  btn.disabled=true;btn.textContent=text;
+}
+function submitWithMode(mode){
+  importMode.value=mode;
+  setBusy(mode==="refresh"?"正在重新读取":"正在点亮");
+  form.submit();
+}
+useCache.addEventListener("click",function(){submitWithMode("cache")});
+refreshCache.addEventListener("click",function(){submitWithMode("refresh")});
+form.addEventListener("submit",async function(e){
+  if(csvMode){setBusy("正在导入");return}
+  if(importMode.value!=="normal"){setBusy(importMode.value==="refresh"?"正在重新读取":"正在点亮");return}
+  e.preventDefault();
+  var id=dbid.value.trim();
+  if(!id){return}
+  var btn=form.querySelector("button[type=submit]");
+  btn.disabled=true;btn.textContent="正在检查缓存";
+  try{
+    var r=await fetch("/api/douban-cache?douban_id="+encodeURIComponent(id),{cache:"no-store"});
+    if(r.ok){
+      var d=await r.json();
+      if(d.has_cache&&d.rows>=3){
+        var total=d.total||d.rows;
+        cacheMessage.textContent="这个豆瓣 ID 已缓存 "+d.rows+"/"+total+" 条观影记录。你可以立刻用缓存生成，也可以重新读取豆瓣更新缓存。";
+        cacheChoice.classList.add("show");
+        btn.disabled=false;btn.textContent="点亮星空";
+        return;
+      }
+    }
+  }catch(err){}
+  submitWithMode("normal");
 });
 var cv=document.getElementById("cv"),ctx=cv.getContext("2d");
 var dpr=Math.min(devicePixelRatio||1,2),W=0,H=0;
