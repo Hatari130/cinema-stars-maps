@@ -461,7 +461,9 @@ def _browser_import_script(api_base, job_id, user_id):
   }
   function pageUrl(start){
     const url = new URL(location.href);
-    url.pathname = "/people/" + USER + "/collect";
+    const mine = location.pathname === "/mine";
+    url.pathname = mine ? "/mine" : "/people/" + USER + "/collect";
+    if (mine) url.searchParams.set("status", "collect");
     url.searchParams.set("start", String(start));
     url.searchParams.set("sort", "time");
     url.searchParams.set("rating", "all");
@@ -478,8 +480,10 @@ def _browser_import_script(api_base, job_id, user_id):
     if (!r.ok) throw new Error(await r.text());
     return r.json();
   }
-  if (location.hostname !== "movie.douban.com" || !/\/people\/[^/]+\/collect/.test(location.pathname)) {
-    alert("请先打开你的豆瓣「看过」页面，再点击书签栏里的「电影史导入器」。");
+  const isPeopleCollect = /\/people\/[^/]+\/collect/.test(location.pathname);
+  const isMineCollect = location.pathname === "/mine" && (new URL(location.href)).searchParams.get("status") === "collect";
+  if (location.hostname !== "movie.douban.com" || (!isPeopleCollect && !isMineCollect)) {
+    alert("请先打开你的豆瓣「看过」页面，再点击书签栏里的「电影史导入器」。登录后从豆瓣进入的 /mine?status=collect 页面也可以。");
     return;
   }
   const current = (location.pathname.match(/\/people\/([^/]+)\/collect/) || [])[1];
@@ -488,19 +492,18 @@ def _browser_import_script(api_base, job_id, user_id):
   try {
     while (true) {
       let doc;
-      if (start === 0) {
-        doc = document;
-      } else {
-        say("正在读取第 " + (Math.floor(start / PAGE_SIZE) + 1) + " 页");
-        const html = await fetch(pageUrl(start), {credentials:"include"}).then(r => {
-          if (!r.ok) throw new Error("豆瓣返回 " + r.status);
-          return r.text();
-        });
-        doc = new DOMParser().parseFromString(html, "text/html");
-      }
+      say("正在读取第 " + (Math.floor(start / PAGE_SIZE) + 1) + " 页");
+      const html = await fetch(pageUrl(start), {credentials:"include"}).then(r => {
+        if (!r.ok) throw new Error("豆瓣返回 " + r.status);
+        return r.text();
+      });
+      doc = new DOMParser().parseFromString(html, "text/html");
       if (!total) total = totalOf(doc);
       const rows = rowsOf(doc);
-      if (!rows.length) break;
+      if (!rows.length) {
+        if (!imported) throw new Error("没有读到影片，请确认当前账号的豆瓣「看过」页面可见，且页面不是验证码或异常页。");
+        break;
+      }
       await upload("/api/jobs/" + JOB + "/browser-import-page", {
         start,
         total: total || (start + rows.length),
@@ -513,6 +516,7 @@ def _browser_import_script(api_base, job_id, user_id):
       start += PAGE_SIZE;
       await sleep(550 + Math.random() * 650);
     }
+    if (imported < 3) throw new Error("只读到 " + imported + " 部影片，至少需要 3 部才能生成星空。");
     const done = await upload("/api/jobs/" + JOB + "/browser-import-finish", {total: total || imported});
     say("导入完成，正在回到电影史页面");
     setTimeout(() => { location.href = API_BASE + (done.build_url || ("/build/" + JOB)); }, 700);
