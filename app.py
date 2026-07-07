@@ -350,16 +350,30 @@ def _save_page(user_id, start, total, rows):
     )
     con.commit(); con.close()
 
-def _fetch_page(session, user_id, start, known_total=None, use_cache=True):
+def _clear_douban_pages(user_id):
+    con = db()
+    con.execute("DELETE FROM douban_pages WHERE douban_id=?", (user_id,))
+    con.commit(); con.close()
+
+def _clear_all_douban_pages():
+    con = db()
+    con.execute("DELETE FROM douban_pages")
+    con.commit(); con.close()
+
+def _fetch_page(session, user_id, start, known_total=None, use_cache=True, save_cache=True):
     cached = _cached_page(user_id, start) if use_cache else None
     if cached:
         return cached[0], cached[1], True, ""
     html = request_html(session, _page_url(user_id, start), 20, 3, 1.0)
     total = known_total if known_total is not None else extract_total(html)
     rows = parse_page(html)
-    _save_page(user_id, start, total, rows)
+    if save_cache:
+        _save_page(user_id, start, total, rows)
     profile_name = extract_profile_name(html) if start == 0 else ""
     return total, rows, False, profile_name
+
+# douban_pages is only a short-lived import buffer now, not a persistent cache.
+_clear_all_douban_pages()
 
 def _cache_summary(user_id):
     con = db()
@@ -691,6 +705,8 @@ def _run_douban_job(job_id, mode="normal"):
     session.headers.update(HEADERS)
     rows = []
     total = 0
+    if mode != "cache_only":
+        _clear_douban_pages(user_id)
     try:
         if mode == "cache_only":
             rows, cached_total = _rows_from_cache(user_id)
@@ -702,7 +718,7 @@ def _run_douban_job(job_id, mode="normal"):
                     _finish_douban_job(job_id, rows, total, cached_total and len(rows) < cached_total, "使用缓存生成")
                 return
             _update_job(job_id, message="缓存数据不足，正在重新连接豆瓣")
-        use_cache = mode != "refresh"
+        use_cache = False
         total, first_rows, from_cache, profile_name = _fetch_page(session, user_id, 0, use_cache=use_cache)
         if not title:
             title = profile_name or _fetch_profile_name(session, user_id)
@@ -761,6 +777,8 @@ def _run_douban_job(job_id, mode="normal"):
             _finish_douban_job(job_id, rows, total, True, str(exc))
         else:
             _update_job(job_id, status="failed", message=_douban_failure_message(exc), error=str(exc)[:500])
+    finally:
+        _clear_douban_pages(user_id)
 
 @app.get("/", response_class=HTMLResponse)
 def landing():
@@ -976,6 +994,8 @@ def browser_import_page(job_id: str, payload: dict = Body(...)):
     except (TypeError, ValueError):
         total = start + len(rows)
     profile_name = (payload.get("profile_name") or "").strip()[:40]
+    if start == 0:
+        _clear_douban_pages(row["douban_id"])
     _save_page(row["douban_id"], start, total, rows)
     all_rows, _ = _rows_from_cache(row["douban_id"])
     fields = {}
@@ -1002,6 +1022,7 @@ def browser_import_finish(job_id: str, payload: dict = Body(default={})):
         return {"ok": True, "status": row["status"], "build_url": f"/build/{job_id}"}
     rows, _ = _rows_from_cache(row["douban_id"])
     if len(rows) < 3:
+        _clear_douban_pages(row["douban_id"])
         raise HTTPException(400, "缓存数据不足，无法生成星空")
     try:
         total = int(payload.get("total") or row["total"] or len(rows))
@@ -1009,6 +1030,7 @@ def browser_import_finish(job_id: str, payload: dict = Body(default={})):
         total = len(rows)
     _update_job(job_id, status="finalizing", message="浏览器导入完成，正在生成星空", error="")
     _finish_douban_job(job_id, rows, total, False)
+    _clear_douban_pages(row["douban_id"])
     return {"ok": True, "status": "complete", "build_url": f"/build/{job_id}"}
 
 def _rows_from_cache(user_id):
@@ -1036,9 +1058,11 @@ def finalize_job(job_id: str):
         return {"ok": True, "status": row["status"]}
     rows, _ = _rows_from_cache(row["douban_id"])
     if len(rows) < 3:
+        _clear_douban_pages(row["douban_id"])
         raise HTTPException(400, "缓存数据不足，无法生成星空")
     _update_job(job_id, status="finalizing", message="跳过时长补全，正在生成星空")
     _finish_douban_job(job_id, rows, row["total"] or len(rows), True, "用户跳过时长补全")
+    _clear_douban_pages(row["douban_id"])
     return {"ok": True, "status": "partial"}
 
 @app.post("/api/jobs/{job_id}/resume")
